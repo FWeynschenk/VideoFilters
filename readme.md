@@ -1,0 +1,1 @@
+Chrome extension for manipulating style.filters on html5 <video> tags.
