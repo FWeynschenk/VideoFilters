@@ -1,0 +1,89 @@
+body {
+    min-width: 300px;
+    padding: 0 15px 15px 15px;
+    background: radial-gradient(rgb(214, 214, 214) 15%, transparent 16%) 0 0,
+        radial-gradient(rgb(214, 214, 214) 15%, transparent 16%) 8px 8px,
+        radial-gradient(rgba(255, 255, 255, 0.1) 15%, transparent 20%) 0 1px,
+        radial-gradient(rgba(255, 255, 255, 0.1) 15%, transparent 20%) 8px 9px;
+    background-color: rgb(238, 238, 238);
+    background-size: 16px 16px;
+}
+
+h1, h2 {
+    font-family: "Courier New", Courier, monospace;
+    margin-bottom: 5px;
+}
+
+footer {
+    text-align: center;
+    margin-top: 50px;
+    display: flex;
+    justify-content: space-around;
+}
+footer div a:hover {
+    outline: 1px solid #000;
+}
+
+.noVidsFound {
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+/* #videosList videoDivs settingDivs label|input|span|button */
+#videosList div {
+    font-size: 1.1em;
+}
+#videosList div div {
+    display: grid;
+    grid-template-columns: 3fr 4fr 2fr 24px;
+}
+
+#videosList div div label {
+    padding: 1px 0;
+}
+#videosList div div input {
+    padding: 1px 0;
+}
+#videosList div div span {
+    padding: 1px 0;
+}
+#videosList div div button {
+    padding: 1px 0;
+    all: unset;
+    width: 24px;
+    height: 24px;
+    background-image: url("/images/round_restart_alt_black_24dp.png");
+    background-position: center;
+}
+#videosList div div button:hover:enabled {
+    outline: 1px solid #000;
+}
+#videosList div div button:disabled {
+    opacity: 0.3;
+}
+
+#defaultsList {
+    font-size: 1.1em;
+    padding-left: 15px;
+}
+#defaultsList div {
+    width: 230px;
+    margin-top: 3px;
+    display: grid;
+    grid-template-columns: 5fr 1fr 1fr;
+}
+#defaultsList div input {
+    text-align: end;
+    width: 25px;
+}
+
+/* It would be so cool if the number increment arrows become standardised in some way. This smells bad. */
+input[type="number"] {
+    -webkit-appearance: textfield;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+}
