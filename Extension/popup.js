@@ -2,7 +2,9 @@
 *   MUST:
 *       ☺
 *   SHOULD:
+*       sort videos by offsetwidth
 *       presets for filters
+*       replace await sleep with promisified structure
 *   COULD:
 *       indentify video on header:hover
 *   WONT:
@@ -21,10 +23,10 @@ async function main(defaults) {
 
     chrome.runtime.onMessage.addListener((request, _, sendResponse) => {
         if (request.greeting === "videos") {
-            sendResponse({greeting: 'success'});
+            sendResponse({ greeting: 'success' });
             videoList.push(...request.videos);
         } else {
-            sendResponse({greeting: 'failure'});
+            sendResponse({ greeting: 'failure' });
         }
     });
 
@@ -37,7 +39,7 @@ async function main(defaults) {
             const vids = Array.from(document.querySelectorAll("video")).map(mapVid);
             chrome.runtime.sendMessage({ greeting: "videos", videos: vids });
         },
-    }, _ => !chrome.runtime.lastError || console.log("Error:", chrome.runtime.lastError));
+    }, _ => !chrome.runtime.lastError || console.log("Error(getVids):", chrome.runtime.lastError));
 
     // wait for videos to be found
     await sleep(100);
@@ -57,7 +59,14 @@ async function main(defaults) {
 
             let videoEl = document.createElement("div");
             let vidLabel = document.createElement("h3");
-            videos.length > 1 && (vidLabel.innerHTML = `Video: ${i + 1}`);
+            let reqPIPBtn = document.createElement("button");
+            reqPIPBtn.title = "Toggle Picture In Picture";
+            reqPIPBtn.addEventListener("click", () => {
+                reqPIP(videos[i].index, vidMap[i])
+            });
+
+            vidLabel.innerHTML = videos.length > 1 ? `Video: ${i + 1}` : '&nbsp';
+            vidLabel.appendChild(reqPIPBtn);
             videoEl.appendChild(vidLabel);
             videosListEl.appendChild(videoEl);
 
@@ -72,7 +81,7 @@ async function main(defaults) {
         const brightnessLabel = document.createElement("label");
         brightnessLabel.innerHTML = "Brightness:";
         const brightnessPercent = document.createElement("span");
-        brightnessPercent.innerHTML = `${parseInt(pf.brightness * 100)}%`;
+        brightnessPercent.innerHTML = `${Math.round(pf.brightness * 100)}%`;
         const brightnessSlider = document.createElement("input");
         brightnessSlider.type = "range";
         brightnessSlider.min = defaults.brightness.min;
@@ -87,14 +96,14 @@ async function main(defaults) {
         brightnessReset.disabled = pf.brightness == defaults.brightness.v;
         brightnessReset.addEventListener("click", () => {
             brightnessSlider.value = 1;
-            brightnessPercent.innerHTML = `${parseInt(brightnessSlider.value * 100)}%`;
+            brightnessPercent.innerHTML = `${Math.round(brightnessSlider.value * 100)}%`;
             vidMap[i].pf.brightness = brightnessSlider.value;
             brightnessReset.disabled = true;
             setFilter(videos[i].index, vidMap[i]);
         });
         brightnessSlider.addEventListener("input", () => {
             //set brightness val and update filter
-            brightnessPercent.innerHTML = `${parseInt(brightnessSlider.value * 100)}%`;
+            brightnessPercent.innerHTML = `${Math.round(brightnessSlider.value * 100)}%`;
             vidMap[i].pf.brightness = brightnessSlider.value;
             brightnessReset.disabled = brightnessSlider.value == defaults.brightness.v;
             setFilter(videos[i].index, vidMap[i]);
@@ -107,7 +116,7 @@ async function main(defaults) {
         const contrastLabel = document.createElement("label");
         contrastLabel.innerHTML = "Contrast:";
         const contrastPercent = document.createElement("span");
-        contrastPercent.innerHTML = `${parseInt(pf.contrast * 100)}%`;
+        contrastPercent.innerHTML = `${Math.round(pf.contrast * 100)}%`;
         const contrastSlider = document.createElement("input");
         contrastSlider.type = "range";
         contrastSlider.min = defaults.contrast.min;
@@ -122,14 +131,14 @@ async function main(defaults) {
         contrastReset.disabled = pf.contrast == defaults.contrast.v;
         contrastReset.addEventListener("click", () => {
             contrastSlider.value = 1;
-            contrastPercent.innerHTML = `${parseInt(contrastSlider.value * 100)}%`;
+            contrastPercent.innerHTML = `${Math.round(contrastSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.contrast = contrastSlider.value;
             contrastReset.disabled = true;
             setFilter(videos[i].index, vidMap[videos[i].index]);
         });
         contrastSlider.addEventListener("input", () => {
             //set contrast val and update filter
-            contrastPercent.innerHTML = `${parseInt(contrastSlider.value * 100)}%`;
+            contrastPercent.innerHTML = `${Math.round(contrastSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.contrast = contrastSlider.value;
             contrastReset.disabled = contrastSlider.value == defaults.contrast.v;
             setFilter(videos[i].index, vidMap[videos[i].index]);
@@ -142,7 +151,7 @@ async function main(defaults) {
         const saturationLabel = document.createElement("label");
         saturationLabel.innerHTML = "Saturation:";
         const saturationPercent = document.createElement("span");
-        saturationPercent.innerHTML = `${parseInt(pf.saturate * 100)}%`;
+        saturationPercent.innerHTML = `${Math.round(pf.saturate * 100)}%`;
         const saturationSlider = document.createElement("input");
         saturationSlider.type = "range";
         saturationSlider.min = defaults.saturation.min;
@@ -157,14 +166,14 @@ async function main(defaults) {
         saturationReset.disabled = pf.saturate == defaults.saturation.v;
         saturationReset.addEventListener("click", () => {
             saturationSlider.value = 1;
-            saturationPercent.innerHTML = `${parseInt(saturationSlider.value * 100)}%`;
+            saturationPercent.innerHTML = `${Math.round(saturationSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.saturate = saturationSlider.value;
             saturationReset.disabled = true;
             setFilter(videos[i].index, vidMap[videos[i].index]);
         });
         saturationSlider.addEventListener("input", () => {
             //set saturation val and update filter
-            saturationPercent.innerHTML = `${parseInt(saturationSlider.value * 100)}%`;
+            saturationPercent.innerHTML = `${Math.round(saturationSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.saturate = saturationSlider.value;
             saturationReset.disabled = saturationSlider.value == defaults.saturation.v;
             setFilter(videos[i].index, vidMap[videos[i].index]);
@@ -177,7 +186,7 @@ async function main(defaults) {
         const invertLabel = document.createElement("label");
         invertLabel.innerHTML = "Invert:";
         const invertPercent = document.createElement("span");
-        invertPercent.innerHTML = `${parseInt(pf.invert * 100)}%`;
+        invertPercent.innerHTML = `${Math.round(pf.invert * 100)}%`;
         const invertSlider = document.createElement("input");
         invertSlider.type = "range";
         invertSlider.min = defaults.invert.min;
@@ -192,14 +201,14 @@ async function main(defaults) {
         invertReset.disabled = pf.invert == defaults.invert.v;
         invertReset.addEventListener("click", () => {
             invertSlider.value = 0;
-            invertPercent.innerHTML = `${parseInt(invertSlider.value * 100)}%`;
+            invertPercent.innerHTML = `${Math.round(invertSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.invert = invertSlider.value;
             invertReset.disabled = true;
             setFilter(videos[i].index, vidMap[videos[i].index]);
         });
         invertSlider.addEventListener("input", () => {
             //set invert val and update filter
-            invertPercent.innerHTML = `${parseInt(invertSlider.value * 100)}%`;
+            invertPercent.innerHTML = `${Math.round(invertSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.invert = invertSlider.value;
             invertReset.disabled = invertSlider.value == defaults.invert.v;
             setFilter(videos[i].index, vidMap[videos[i].index]);
@@ -212,7 +221,7 @@ async function main(defaults) {
         const sepiaLabel = document.createElement("label");
         sepiaLabel.innerHTML = "Sepia:";
         const sepiaPercent = document.createElement("span");
-        sepiaPercent.innerHTML = `${parseInt(pf.sepia * 100)}%`;
+        sepiaPercent.innerHTML = `${Math.round(pf.sepia * 100)}%`;
         const sepiaSlider = document.createElement("input");
         sepiaSlider.type = "range";
         sepiaSlider.min = defaults.sepia.min;
@@ -227,14 +236,14 @@ async function main(defaults) {
         sepiaReset.disabled = pf.sepia == defaults.sepia.v;
         sepiaReset.addEventListener("click", () => {
             sepiaSlider.value = 0;
-            sepiaPercent.innerHTML = `${parseInt(sepiaSlider.value * 100)}%`;
+            sepiaPercent.innerHTML = `${Math.round(sepiaSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.sepia = sepiaSlider.value;
             sepiaReset.disabled = true;
             setFilter(videos[i].index, vidMap[videos[i].index]);
         });
         sepiaSlider.addEventListener("input", () => {
             //set sepia val and update filter
-            sepiaPercent.innerHTML = `${parseInt(sepiaSlider.value * 100)}%`;
+            sepiaPercent.innerHTML = `${Math.round(sepiaSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.sepia = sepiaSlider.value;
             sepiaReset.disabled = sepiaSlider.value == defaults.sepia.v;
             setFilter(videos[i].index, vidMap[videos[i].index]);
@@ -247,7 +256,7 @@ async function main(defaults) {
         const opacityLabel = document.createElement("label");
         opacityLabel.innerHTML = "Opacity:";
         const opacityPercent = document.createElement("span");
-        opacityPercent.innerHTML = `${parseInt(pf.opacity * 100)}%`;
+        opacityPercent.innerHTML = `${Math.round(pf.opacity * 100)}%`;
         const opacitySlider = document.createElement("input");
         opacitySlider.type = "range";
         opacitySlider.min = defaults.opacity.min;
@@ -262,14 +271,14 @@ async function main(defaults) {
         opacityReset.disabled = pf.opacity == defaults.opacity.v;
         opacityReset.addEventListener("click", () => {
             opacitySlider.value = 1;
-            opacityPercent.innerHTML = `${parseInt(opacitySlider.value * 100)}%`;
+            opacityPercent.innerHTML = `${Math.round(opacitySlider.value * 100)}%`;
             vidMap[videos[i].index].pf.opacity = opacitySlider.value;
             opacityReset.disabled = true;
             setFilter(videos[i].index, vidMap[videos[i].index]);
         });
         opacitySlider.addEventListener("input", () => {
             //set opacity val and update filter
-            opacityPercent.innerHTML = `${parseInt(opacitySlider.value * 100)}%`;
+            opacityPercent.innerHTML = `${Math.round(opacitySlider.value * 100)}%`;
             vidMap[videos[i].index].pf.opacity = opacitySlider.value;
             opacityReset.disabled = opacitySlider.value == defaults.opacity.v;
             setFilter(videos[i].index, vidMap[videos[i].index]);
@@ -282,7 +291,7 @@ async function main(defaults) {
         const grayscaleLabel = document.createElement("label");
         grayscaleLabel.innerHTML = "Grayscale:";
         const grayscalePercent = document.createElement("span");
-        grayscalePercent.innerHTML = `${parseInt(pf.grayscale * 100)}%`;
+        grayscalePercent.innerHTML = `${Math.round(pf.grayscale * 100)}%`;
         const grayscaleSlider = document.createElement("input");
         grayscaleSlider.type = "range";
         grayscaleSlider.min = defaults.grayscale.min;
@@ -297,14 +306,14 @@ async function main(defaults) {
         grayscaleReset.disabled = pf.grayscale == defaults.grayscale.v;
         grayscaleReset.addEventListener("click", () => {
             grayscaleSlider.value = 0;
-            grayscalePercent.innerHTML = `${parseInt(grayscaleSlider.value * 100)}%`;
+            grayscalePercent.innerHTML = `${Math.round(grayscaleSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.grayscale = grayscaleSlider.value;
             grayscaleReset.disabled = true;
             setFilter(videos[i].index, vidMap[videos[i].index]);
         });
         grayscaleSlider.addEventListener("input", () => {
             //set grayscale val and update filter
-            grayscalePercent.innerHTML = `${parseInt(grayscaleSlider.value * 100)}%`;
+            grayscalePercent.innerHTML = `${Math.round(grayscaleSlider.value * 100)}%`;
             vidMap[videos[i].index].pf.grayscale = grayscaleSlider.value;
             grayscaleReset.disabled = grayscaleSlider.value == defaults.grayscale.v;
             setFilter(videos[i].index, vidMap[videos[i].index]);
@@ -458,6 +467,29 @@ async function main(defaults) {
                 });
             },
         }, _ => !chrome.runtime.lastError || console.log('Error(setPlayBackRate): ', chrome.runtime.lastError));
+    }
+    function reqPIP(index, video) {
+        chrome.storage.local.set({ videoIndex: index });
+        chrome.storage.local.set({ frameUri: video.uri });
+        chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            function: () => {
+                chrome.storage.local.get('frameUri', (data) => {
+                    if (window.location.href !== data.frameUri) return;
+                    chrome.storage.local.get('videoIndex', (videoIndex) => {
+                        const vid = document.querySelectorAll('video').item(videoIndex.videoIndex);
+                        if (document.pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
+                            vid.requestPictureInPicture().then(() => {
+                                document.pipIndex = videoIndex.videoIndex;
+                            });
+                        } else {
+                            document.exitPictureInPicture();
+                            document.pipIndex = null;
+                        }
+                    });
+                });
+            },
+        }, _ => !chrome.runtime.lastError || console.log("Error(reqPIP): ", chrome.runtime.lastError));
     }
 
     function parseFilter(fltr) {

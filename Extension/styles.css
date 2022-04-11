@@ -9,7 +9,8 @@ body {
     background-size: 16px 16px;
 }
 
-h1, h2 {
+h1,
+h2 {
     font-family: "Courier New", Courier, monospace;
     margin-bottom: 5px;
 }
@@ -40,6 +41,24 @@ footer div a:hover {
 
 #videosList div div label {
     padding: 1px 0;
+}
+#videosList div h3 {
+    display: flex;
+    justify-content: space-between;
+}
+#videosList div h3 button {
+    padding: 1px 0;
+    all: unset;
+    width: 24px;
+    height: 24px;
+    background-image: url("/images/outline_picture_in_picture_black_24dp.png");
+    background-position: center;
+}
+#videosList div h3 button:hover {
+    outline: 1px solid #000;
+}
+#videosList div h3 button:active {
+    transform: translateY(2px);
 }
 #videosList div div input {
     padding: 1px 0;
@@ -83,7 +102,7 @@ input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
 }
-input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button {
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
 }
