@@ -16,6 +16,12 @@ async function main(defaults) {
     const videosListEl = document.getElementById("videosList");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
+    const template = {
+        name: "",
+        existing: false,
+        
+    }
+
     // index: { localindex, parsedFilter, playbackRate, windowUri }
     const vidMap = {};
     // accumulator for videos from all frames
@@ -95,6 +101,7 @@ async function main(defaults) {
         const brightnessReset = document.createElement("button");
         brightnessReset.disabled = pf.brightness == defaults.brightness.v;
         brightnessReset.addEventListener("click", () => {
+            // update template TODO, repeat for all eventListeners
             brightnessSlider.value = 1;
             brightnessPercent.innerHTML = `${Math.round(brightnessSlider.value * 100)}%`;
             vidMap[i].pf.brightness = brightnessSlider.value;
