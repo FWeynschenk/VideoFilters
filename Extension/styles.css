@@ -66,7 +66,7 @@ footer div a:hover {
 #videosList div div span {
     padding: 1px 0;
 }
-#videosList div div button {
+#resetBtn {
     padding: 1px 0;
     all: unset;
     width: 24px;
@@ -74,10 +74,42 @@ footer div a:hover {
     background-image: url("/images/round_restart_alt_black_24dp.png");
     background-position: center;
 }
-#videosList div div button:hover:enabled {
+#resetBtn:hover:enabled {
     outline: 1px solid #000;
 }
-#videosList div div button:disabled {
+#resetBtn:disabled {
+    opacity: 0.3;
+}
+
+#saveBtn {
+    padding: 1px 0;
+    all: unset;
+    width: 24px;
+    height: 24px;
+    background-image: url("/images/save_FILL0_wght400_GRAD0_opsz24.png");
+    background-position: center;
+}
+#saveBtn.addBtn {
+    background-image: url("/images/add_box_FILL0_wght400_GRAD0_opsz24.png");
+}
+#saveBtn:hover:enabled {
+    outline: 1px solid #000;
+}
+#saveBtn:disabled {
+    opacity: 0.3;
+}
+#delBtn{
+    padding: 1px 0;
+    all: unset;
+    width: 24px;
+    height: 24px;
+    background-image: url("/images/delete_forever_FILL0_wght400_GRAD0_opsz24.png");
+    background-position: center;
+}
+#delBtn:hover:enabled {
+    outline: 1px solid #000;
+}
+#delBtn:disabled {
     opacity: 0.3;
 }
 
@@ -106,3 +138,82 @@ input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
 }
+
+.lds-spinner {
+    color: official;
+    display: inline-block;
+    position: relative;
+    width: 80px;
+    height: 80px;
+  }
+  .lds-spinner div {
+    transform-origin: 40px 40px;
+    animation: lds-spinner 1.2s linear infinite;
+  }
+  .lds-spinner div:after {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 3px;
+    left: 37px;
+    width: 6px;
+    height: 18px;
+    border-radius: 20%;
+    background: #000000;
+  }
+  .lds-spinner div:nth-child(1) {
+    transform: rotate(0deg);
+    animation-delay: -1.1s;
+  }
+  .lds-spinner div:nth-child(2) {
+    transform: rotate(30deg);
+    animation-delay: -1s;
+  }
+  .lds-spinner div:nth-child(3) {
+    transform: rotate(60deg);
+    animation-delay: -0.9s;
+  }
+  .lds-spinner div:nth-child(4) {
+    transform: rotate(90deg);
+    animation-delay: -0.8s;
+  }
+  .lds-spinner div:nth-child(5) {
+    transform: rotate(120deg);
+    animation-delay: -0.7s;
+  }
+  .lds-spinner div:nth-child(6) {
+    transform: rotate(150deg);
+    animation-delay: -0.6s;
+  }
+  .lds-spinner div:nth-child(7) {
+    transform: rotate(180deg);
+    animation-delay: -0.5s;
+  }
+  .lds-spinner div:nth-child(8) {
+    transform: rotate(210deg);
+    animation-delay: -0.4s;
+  }
+  .lds-spinner div:nth-child(9) {
+    transform: rotate(240deg);
+    animation-delay: -0.3s;
+  }
+  .lds-spinner div:nth-child(10) {
+    transform: rotate(270deg);
+    animation-delay: -0.2s;
+  }
+  .lds-spinner div:nth-child(11) {
+    transform: rotate(300deg);
+    animation-delay: -0.1s;
+  }
+  .lds-spinner div:nth-child(12) {
+    transform: rotate(330deg);
+    animation-delay: 0s;
+  }
+  @keyframes lds-spinner {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
