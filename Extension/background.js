@@ -11,7 +11,7 @@ const defaults = {
         max: 3,
         step: 0.05,
     },
-    saturation: {
+    saturate: {
         v: 1,
         min: 0,
         max: 3,
@@ -66,10 +66,18 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.storage.sync.get(['defaults'], (data) => {
         if(!data.defaults) {
             chrome.storage.sync.set({ defaults })
-        } else if (!data.defaults.templates) {
-            data.defaults.templates = [];
-            chrome.storage.sync.set({ defaults })
+        } else {
+            if(!data.defaults.saturate && data.defaults.saturation) {
+                data.defaults["saturate"] = data.defaults.saturation;
+                chrome.storage.sync.set({ defaults })
+            }
+            if(!data.defaults.templates) {
+                data.defaults.templates = [];
+                chrome.storage.sync.set({ defaults })
+            }
         }
     });
 
 });
+
+// template {name, pf, playbackRate}

@@ -3,7 +3,6 @@
 *       ☺
 *   SHOULD:
 *       sort videos by offsetwidth
-*       presets for filters
 *       replace await sleep with promisified structure
 *   COULD:
 *       indentify video on header:hover
@@ -16,21 +15,20 @@ async function main(defaults) {
     const videosListEl = document.getElementById("videosList");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    const template = {
-        name: "",
-        existing: false,
-        
-    }
-
-    // index: { localindex, parsedFilter, playbackRate, windowUri }
-    const vidMap = {};
-    // accumulator for videos from all frames
-    const videoList = [];
+    const vidMap = {}; // index: { localindex, parsedFilter, playbackRate, windowUri }
+    const videoList = []; // accumulator for videos from all frames
+    const vidQueue = [];
+    let vidCounter = 0;
+    let addVideoRunning = false;
 
     chrome.runtime.onMessage.addListener((request, _, sendResponse) => {
         if (request.greeting === "videos") {
             sendResponse({ greeting: 'success' });
-            videoList.push(...request.videos);
+            if(request.videos.length > 0) {
+                videoList.push(...request.videos);
+                vidQueue.push(...request.videos);
+                addVideoRunner();
+            }
         } else {
             sendResponse({ greeting: 'failure' });
         }
@@ -47,398 +45,234 @@ async function main(defaults) {
         },
     }, _ => !chrome.runtime.lastError || console.log("Error(getVids):", chrome.runtime.lastError));
 
-    // wait for videos to be found
-    await sleep(100);
-
-    // for each video create a div with controls and append it to the videosList
-    vidList(videoList);
-    console.log(videoList.map(vid => vid.index));
-    function vidList(videos) {
-        if (videos.length === 0) {
+    // give it time to find videos before telling user there aren't any
+    await sleep(1000).then(() => {
+        if (videoList.length === 0) {
             videosListEl.classList.add("noVidsFound");
             videosListEl.innerHTML = `No videos found on page! <br> If there is one, use the feedback button on the options page!`;
-            return
         }
-        for (let i = 0; i < videos.length; i++) {
-            const pf = parseFilter(videos[i].filter);
-            vidMap[i] = { localIndex: videos[i].index, pf: pf, playbackRate: videos[i].playbackRate, uri: videos[i].uri };
+    });
 
-            let videoEl = document.createElement("div");
-            let vidLabel = document.createElement("h3");
-            let reqPIPBtn = document.createElement("button");
-            reqPIPBtn.title = "Toggle Picture In Picture";
-            reqPIPBtn.addEventListener("click", () => {
-                reqPIP(videos[i].index, vidMap[i])
-            });
-
-            vidLabel.innerHTML = videos.length > 1 ? `Video: ${i + 1}` : '&nbsp';
-            vidLabel.appendChild(reqPIPBtn);
-            videoEl.appendChild(vidLabel);
-            videosListEl.appendChild(videoEl);
-
-            addFilterElements(videos, i, videoEl, pf);
-            addPlaybackRateElement(videos, i, videoEl);
+    function addVideoRunner() {
+        if (addVideoRunning) return;
+        addVideoRunning = true;
+        if(vidCounter == 0) {
+            videosListEl.innerHTML = "";
+            videosListEl.classList.remove("noVidsFound");
         }
-    };
+        const newVideo = vidQueue.pop();
+        const pf = parseFilter(newVideo.filter);
+        const vidUID = `${newVideo.index}-${newVideo.uri}`
+        vidMap[vidUID] = { localIndex: newVideo.index, pf: pf, playbackRate: newVideo.playbackRate, uri: newVideo.uri };
 
-    function addFilterElements(videos, i, videoEl, pf) {
-        //brightness
-        const brightnessDiv = document.createElement("div");
-        const brightnessLabel = document.createElement("label");
-        brightnessLabel.innerHTML = "Brightness:";
-        const brightnessPercent = document.createElement("span");
-        brightnessPercent.innerHTML = `${Math.round(pf.brightness * 100)}%`;
-        const brightnessSlider = document.createElement("input");
-        brightnessSlider.type = "range";
-        brightnessSlider.min = defaults.brightness.min;
-        brightnessSlider.step = defaults.brightness.step;
-        brightnessSlider.max = defaults.brightness.max;
-        brightnessSlider.value = pf.brightness;
-        brightnessDiv.appendChild(brightnessLabel);
-        brightnessDiv.appendChild(brightnessSlider);
-        brightnessDiv.appendChild(brightnessPercent);
-        //brightness reset button
-        const brightnessReset = document.createElement("button");
-        brightnessReset.disabled = pf.brightness == defaults.brightness.v;
-        brightnessReset.addEventListener("click", () => {
-            // update template TODO, repeat for all eventListeners
-            brightnessSlider.value = 1;
-            brightnessPercent.innerHTML = `${Math.round(brightnessSlider.value * 100)}%`;
-            vidMap[i].pf.brightness = brightnessSlider.value;
-            brightnessReset.disabled = true;
-            setFilter(videos[i].index, vidMap[i]);
+        const videoEl = document.createElement("div");
+        const vidLabel = document.createElement("h3");
+        const reqPIPBtn = document.createElement("button");
+        reqPIPBtn.title = "Toggle Picture In Picture";
+        reqPIPBtn.addEventListener("click", () => {
+            reqPIP(vidMap[vidUID]);
         });
-        brightnessSlider.addEventListener("input", () => {
-            //set brightness val and update filter
-            brightnessPercent.innerHTML = `${Math.round(brightnessSlider.value * 100)}%`;
-            vidMap[i].pf.brightness = brightnessSlider.value;
-            brightnessReset.disabled = brightnessSlider.value == defaults.brightness.v;
-            setFilter(videos[i].index, vidMap[i]);
-        });
-        brightnessDiv.appendChild(brightnessReset);
-        videoEl.appendChild(brightnessDiv);
 
-        //contrast
-        const contrastDiv = document.createElement("div");
-        const contrastLabel = document.createElement("label");
-        contrastLabel.innerHTML = "Contrast:";
-        const contrastPercent = document.createElement("span");
-        contrastPercent.innerHTML = `${Math.round(pf.contrast * 100)}%`;
-        const contrastSlider = document.createElement("input");
-        contrastSlider.type = "range";
-        contrastSlider.min = defaults.contrast.min;
-        contrastSlider.step = defaults.contrast.step;
-        contrastSlider.max = defaults.contrast.max;
-        contrastSlider.value = pf.contrast;
-        contrastDiv.appendChild(contrastLabel);
-        contrastDiv.appendChild(contrastSlider);
-        contrastDiv.appendChild(contrastPercent);
-        //contrast reset button
-        const contrastReset = document.createElement("button");
-        contrastReset.disabled = pf.contrast == defaults.contrast.v;
-        contrastReset.addEventListener("click", () => {
-            contrastSlider.value = 1;
-            contrastPercent.innerHTML = `${Math.round(contrastSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.contrast = contrastSlider.value;
-            contrastReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        contrastSlider.addEventListener("input", () => {
-            //set contrast val and update filter
-            contrastPercent.innerHTML = `${Math.round(contrastSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.contrast = contrastSlider.value;
-            contrastReset.disabled = contrastSlider.value == defaults.contrast.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        contrastDiv.appendChild(contrastReset);
-        videoEl.appendChild(contrastDiv);
+        vidLabel.innerHTML = `Video: ${++vidCounter}`;
+        vidLabel.appendChild(reqPIPBtn);
+        videoEl.appendChild(vidLabel);
+        videosListEl.appendChild(videoEl);
 
-        //saturation
-        const saturationDiv = document.createElement("div");
-        const saturationLabel = document.createElement("label");
-        saturationLabel.innerHTML = "Saturation:";
-        const saturationPercent = document.createElement("span");
-        saturationPercent.innerHTML = `${Math.round(pf.saturate * 100)}%`;
-        const saturationSlider = document.createElement("input");
-        saturationSlider.type = "range";
-        saturationSlider.min = defaults.saturation.min;
-        saturationSlider.step = defaults.saturation.step;
-        saturationSlider.max = defaults.saturation.max;
-        saturationSlider.value = pf.saturate;
-        saturationDiv.appendChild(saturationLabel);
-        saturationDiv.appendChild(saturationSlider);
-        saturationDiv.appendChild(saturationPercent);
-        //saturation reset button
-        const saturationReset = document.createElement("button");
-        saturationReset.disabled = pf.saturate == defaults.saturation.v;
-        saturationReset.addEventListener("click", () => {
-            saturationSlider.value = 1;
-            saturationPercent.innerHTML = `${Math.round(saturationSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.saturate = saturationSlider.value;
-            saturationReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        saturationSlider.addEventListener("input", () => {
-            //set saturation val and update filter
-            saturationPercent.innerHTML = `${Math.round(saturationSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.saturate = saturationSlider.value;
-            saturationReset.disabled = saturationSlider.value == defaults.saturation.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        saturationDiv.appendChild(saturationReset);
-        videoEl.appendChild(saturationDiv);
+        addFilterElement(videoEl, vidUID, pf, "Brightness:", "brightness");
+        addFilterElement(videoEl, vidUID, pf, "Contrast:", "contrast");
+        addFilterElement(videoEl, vidUID, pf, "Saturation:", "saturate");
+        addFilterElement(videoEl, vidUID, pf, "Invert:", "invert");
+        addFilterElement(videoEl, vidUID, pf, "Sepia:", "sepia");
+        addFilterElement(videoEl, vidUID, pf, "Opacity:", "opacity");
+        addFilterElement(videoEl, vidUID, pf, "Grayscale:", "grayscale");
+        addFilterElement(videoEl, vidUID, pf, "Hue:", "hueRotate", (val) => `${val} deg`);
+        addFilterElement(videoEl, vidUID, pf, "Blur:", "blur", (val) => `${val} px`);
+        
+        addPlaybackRateElement(videoEl, vidUID);
 
-        //invert
-        const invertDiv = document.createElement("div");
-        const invertLabel = document.createElement("label");
-        invertLabel.innerHTML = "Invert:";
-        const invertPercent = document.createElement("span");
-        invertPercent.innerHTML = `${Math.round(pf.invert * 100)}%`;
-        const invertSlider = document.createElement("input");
-        invertSlider.type = "range";
-        invertSlider.min = defaults.invert.min;
-        invertSlider.step = defaults.invert.step;
-        invertSlider.max = defaults.invert.max;
-        invertSlider.value = pf.invert;
-        invertDiv.appendChild(invertLabel);
-        invertDiv.appendChild(invertSlider);
-        invertDiv.appendChild(invertPercent);
-        //invert reset button
-        const invertReset = document.createElement("button");
-        invertReset.disabled = pf.invert == defaults.invert.v;
-        invertReset.addEventListener("click", () => {
-            invertSlider.value = 0;
-            invertPercent.innerHTML = `${Math.round(invertSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.invert = invertSlider.value;
-            invertReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        invertSlider.addEventListener("input", () => {
-            //set invert val and update filter
-            invertPercent.innerHTML = `${Math.round(invertSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.invert = invertSlider.value;
-            invertReset.disabled = invertSlider.value == defaults.invert.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        invertDiv.appendChild(invertReset);
-        videoEl.appendChild(invertDiv);
+        addPresetSelector(videoEl, vidUID);
 
-        //sepia
-        const sepiaDiv = document.createElement("div");
-        const sepiaLabel = document.createElement("label");
-        sepiaLabel.innerHTML = "Sepia:";
-        const sepiaPercent = document.createElement("span");
-        sepiaPercent.innerHTML = `${Math.round(pf.sepia * 100)}%`;
-        const sepiaSlider = document.createElement("input");
-        sepiaSlider.type = "range";
-        sepiaSlider.min = defaults.sepia.min;
-        sepiaSlider.step = defaults.sepia.step;
-        sepiaSlider.max = defaults.sepia.max;
-        sepiaSlider.value = pf.sepia;
-        sepiaDiv.appendChild(sepiaLabel);
-        sepiaDiv.appendChild(sepiaSlider);
-        sepiaDiv.appendChild(sepiaPercent);
-        //sepia reset button
-        const sepiaReset = document.createElement("button");
-        sepiaReset.disabled = pf.sepia == defaults.sepia.v;
-        sepiaReset.addEventListener("click", () => {
-            sepiaSlider.value = 0;
-            sepiaPercent.innerHTML = `${Math.round(sepiaSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.sepia = sepiaSlider.value;
-            sepiaReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        sepiaSlider.addEventListener("input", () => {
-            //set sepia val and update filter
-            sepiaPercent.innerHTML = `${Math.round(sepiaSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.sepia = sepiaSlider.value;
-            sepiaReset.disabled = sepiaSlider.value == defaults.sepia.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        sepiaDiv.appendChild(sepiaReset);
-        videoEl.appendChild(sepiaDiv);
-
-        //opacity
-        const opacityDiv = document.createElement("div");
-        const opacityLabel = document.createElement("label");
-        opacityLabel.innerHTML = "Opacity:";
-        const opacityPercent = document.createElement("span");
-        opacityPercent.innerHTML = `${Math.round(pf.opacity * 100)}%`;
-        const opacitySlider = document.createElement("input");
-        opacitySlider.type = "range";
-        opacitySlider.min = defaults.opacity.min;
-        opacitySlider.step = defaults.opacity.step;
-        opacitySlider.max = defaults.opacity.max;
-        opacitySlider.value = pf.opacity;
-        opacityDiv.appendChild(opacityLabel);
-        opacityDiv.appendChild(opacitySlider);
-        opacityDiv.appendChild(opacityPercent);
-        //opacity reset button
-        const opacityReset = document.createElement("button");
-        opacityReset.disabled = pf.opacity == defaults.opacity.v;
-        opacityReset.addEventListener("click", () => {
-            opacitySlider.value = 1;
-            opacityPercent.innerHTML = `${Math.round(opacitySlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.opacity = opacitySlider.value;
-            opacityReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        opacitySlider.addEventListener("input", () => {
-            //set opacity val and update filter
-            opacityPercent.innerHTML = `${Math.round(opacitySlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.opacity = opacitySlider.value;
-            opacityReset.disabled = opacitySlider.value == defaults.opacity.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        opacityDiv.appendChild(opacityReset);
-        videoEl.appendChild(opacityDiv);
-
-        //grayscale
-        const grayscaleDiv = document.createElement("div");
-        const grayscaleLabel = document.createElement("label");
-        grayscaleLabel.innerHTML = "Grayscale:";
-        const grayscalePercent = document.createElement("span");
-        grayscalePercent.innerHTML = `${Math.round(pf.grayscale * 100)}%`;
-        const grayscaleSlider = document.createElement("input");
-        grayscaleSlider.type = "range";
-        grayscaleSlider.min = defaults.grayscale.min;
-        grayscaleSlider.step = defaults.grayscale.step;
-        grayscaleSlider.max = defaults.grayscale.max;
-        grayscaleSlider.value = pf.grayscale;
-        grayscaleDiv.appendChild(grayscaleLabel);
-        grayscaleDiv.appendChild(grayscaleSlider);
-        grayscaleDiv.appendChild(grayscalePercent);
-        //grayscale reset button
-        const grayscaleReset = document.createElement("button");
-        grayscaleReset.disabled = pf.grayscale == defaults.grayscale.v;
-        grayscaleReset.addEventListener("click", () => {
-            grayscaleSlider.value = 0;
-            grayscalePercent.innerHTML = `${Math.round(grayscaleSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.grayscale = grayscaleSlider.value;
-            grayscaleReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        grayscaleSlider.addEventListener("input", () => {
-            //set grayscale val and update filter
-            grayscalePercent.innerHTML = `${Math.round(grayscaleSlider.value * 100)}%`;
-            vidMap[videos[i].index].pf.grayscale = grayscaleSlider.value;
-            grayscaleReset.disabled = grayscaleSlider.value == defaults.grayscale.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        grayscaleDiv.appendChild(grayscaleReset);
-        videoEl.appendChild(grayscaleDiv);
-
-        //hueRotate
-        const hueRotateDiv = document.createElement("div");
-        const hueRotateLabel = document.createElement("label");
-        hueRotateLabel.innerHTML = "Hue:";
-        const hueRotateDegree = document.createElement("span");
-        hueRotateDegree.innerHTML = `${pf.hueRotate} deg`;
-        const hueRotateSlider = document.createElement("input");
-        hueRotateSlider.type = "range";
-        hueRotateSlider.min = defaults.hueRotate.min;
-        hueRotateSlider.step = defaults.hueRotate.step;
-        hueRotateSlider.max = defaults.hueRotate.max;
-        hueRotateSlider.value = pf.hueRotate;
-        hueRotateDiv.appendChild(hueRotateLabel);
-        hueRotateDiv.appendChild(hueRotateSlider);
-        hueRotateDiv.appendChild(hueRotateDegree);
-        //hueRotate reset button
-        const hueRotateReset = document.createElement("button");
-        hueRotateReset.disabled = pf.hueRotate == defaults.hueRotate.v;
-        hueRotateReset.addEventListener("click", () => {
-            hueRotateSlider.value = 0;
-            hueRotateDegree.innerHTML = `${hueRotateSlider.value} deg`;
-            vidMap[videos[i].index].pf.hueRotate = hueRotateSlider.value;
-            hueRotateReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        hueRotateSlider.addEventListener("input", () => {
-            //set hueRotate val and update filter
-            hueRotateDegree.innerHTML = `${hueRotateSlider.value} deg`;
-            vidMap[videos[i].index].pf.hueRotate = hueRotateSlider.value;
-            hueRotateReset.disabled = hueRotateSlider.value == defaults.hueRotate.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        hueRotateDiv.appendChild(hueRotateReset);
-        videoEl.appendChild(hueRotateDiv);
-
-        //blur
-        const blurDiv = document.createElement("div");
-        const blurLabel = document.createElement("label");
-        blurLabel.innerHTML = "Blur:";
-        const blurPixels = document.createElement("span");
-        blurPixels.innerHTML = `${pf.blur} px`;
-        const blurSlider = document.createElement("input");
-        blurSlider.type = "range";
-        blurSlider.min = defaults.blur.min;
-        blurSlider.step = defaults.blur.step;
-        blurSlider.max = defaults.blur.max;
-        blurSlider.value = pf.blur;
-        blurDiv.appendChild(blurLabel);
-        blurDiv.appendChild(blurSlider);
-        blurDiv.appendChild(blurPixels);
-        //blur reset button
-        const blurReset = document.createElement("button");
-        blurReset.disabled = pf.blur == defaults.blur.v;
-        blurReset.addEventListener("click", () => {
-            blurSlider.value = 0;
-            blurPixels.innerHTML = `${blurSlider.value} px`;
-            vidMap[videos[i].index].pf.blur = blurSlider.value;
-            blurReset.disabled = true;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        blurSlider.addEventListener("input", () => {
-            //set blur val and update filter
-            blurPixels.innerHTML = `${blurSlider.value} px`;
-            vidMap[videos[i].index].pf.blur = blurSlider.value;
-            blurReset.disabled = blurSlider.value == defaults.blur.v;
-            setFilter(videos[i].index, vidMap[videos[i].index]);
-        });
-        blurDiv.appendChild(blurReset);
-        videoEl.appendChild(blurDiv);
+        addVideoRunning = false;
+        if (vidQueue.length > 0) addVideoRunner();
     }
-    function addPlaybackRateElement(videos, i, videoEl) {
+
+    function addPresetSelector(videoEl, vidUID, preselectedValue) {
+        const presetDiv = document.createElement("div");
+        presetDiv.innerHTML = "Presets: ";
+        const selectEl = document.createElement("select");
+        
+        selectEl.addEventListener("change", (e) => {
+            let template = defaults.templates.find((templ)=>templ.name == e.target.value);
+            if(!template) {
+                template = { name: "default", pf: parseFilter(""), playbackRate: defaults.playbackRate.v };
+            }
+
+            vidMap[vidUID].playbackRate = template.playbackRate;
+            vidMap[vidUID].pf = template.pf;
+            setPlaybackRate(vidMap[vidUID]);
+            setFilter(vidMap[vidUID]);
+            window.dispatchEvent(new CustomEvent("templateChange", { detail: { vidUID: vidUID, templateName: e.target.value }}));
+        });
+
+        templateOptionEls(selectEl, "default")
+        for(const template of defaults.templates) {
+            templateOptionEls(selectEl, template.name);
+        }
+
+        const saveBtn = document.createElement("button");
+        saveBtn.setAttribute('id', 'saveBtn');
+        saveBtn.classList.add("addBtn");
+        saveBtn.addEventListener('click', () => {
+            let presetName = selectEl.value;
+            if(!presetName  || presetName=="undefined" || presetName=="default") presetName = prompt("Please enter new preset name");
+            if (presetName == null || presetName == "") { return; }
+            const saveTemplateEvent = new CustomEvent("templateSave", { detail: { vidUID: vidUID, templateName: presetName }});
+            defaults.templates = defaults.templates.filter(template => template.name != presetName);
+            defaults.templates.push({ name: presetName, pf: vidMap[vidUID].pf, playbackRate: vidMap[vidUID].playbackRate });
+            chrome.storage.sync.set({ defaults }).then(() => {
+                window.dispatchEvent(saveTemplateEvent);
+            });
+        });
+        const delBtn = document.createElement("button");
+        delBtn.setAttribute('id', 'delBtn');
+        delBtn.addEventListener('click', () => {
+            let presetName = selectEl.value;
+            if (presetName == null || presetName == "" || presetName == "default") { return; }
+            const saveTemplateEvent = new CustomEvent("templateSave");
+            defaults.templates = defaults.templates.filter(template => template.name != presetName);
+            chrome.storage.sync.set({ defaults }).then(() => {
+                window.dispatchEvent(saveTemplateEvent);
+            });
+        });
+        window.addEventListener("templateSave", (e) => {
+            presetDiv.remove();
+            addPresetSelector(videoEl, vidUID, e.detail?.vidUID == vidUID ? e.detail.templateName : undefined);
+        }, { once: true });
+        window.addEventListener("templateChange", (e) => {
+            if(e.detail.vidUID != vidUID) return;
+            selectEl.value = e.detail.templateName;
+            updateBtnStates();
+        });
+
+        if(preselectedValue) {
+            selectEl.value = preselectedValue;
+        } else {
+            selectEl.value = undefined;
+        }
+
+        updateBtnStates();
+        presetDiv.appendChild(selectEl);
+        presetDiv.appendChild(saveBtn);
+        presetDiv.appendChild(delBtn);
+        videoEl.appendChild(presetDiv);
+        
+        function updateBtnStates() {
+            if(!selectEl.value || selectEl.value == "default") {
+                saveBtn.classList.add("addBtn");
+                delBtn.disabled = true;
+            } else {
+                delBtn.disabled = false;
+                saveBtn.classList.remove("addBtn");
+            }
+        }
+    }
+
+    function templateOptionEls(parent, name) {
+        const newOption = document.createElement("option");
+        newOption.setAttribute('value', name);
+        newOption.innerHTML = name;
+        parent.appendChild(newOption);
+    }
+
+    function addFilterElement(videoEl, vidUID, pf, label, field, percentFn) {
+        const filterDiv = document.createElement("div");
+        const labelEl = document.createElement("label");
+        labelEl.innerHTML = label;
+        const percentEl = document.createElement("span");
+        percentEl.innerHTML = percentFn ? percentFn(pf[field]) : `${Math.round(pf[field] * 100)}%`;
+        const sliderEl = document.createElement("input");
+        sliderEl.type = "range";
+        sliderEl.min = defaults[field].min;
+        sliderEl.step = defaults[field].step;
+        sliderEl.max = defaults[field].max;
+        sliderEl.value = pf[field];
+        filterDiv.appendChild(labelEl);
+        filterDiv.appendChild(sliderEl);
+        filterDiv.appendChild(percentEl);
+        const resetEl = document.createElement("button");
+        resetEl.setAttribute('id', 'resetBtn')
+        resetEl.disabled = pf[field] == defaults[field].v;
+        resetEl.addEventListener("click", () => {
+            sliderEl.value = defaults[field].v;
+            percentEl.innerHTML = percentFn ? percentFn(sliderEl.value) : `${Math.round(sliderEl.value * 100)}%`;
+            vidMap[vidUID].pf[field] = sliderEl.value;
+            resetEl.disabled = true;
+            setFilter(vidMap[vidUID]);
+        });
+        sliderEl.addEventListener("input", () => {
+            percentEl.innerHTML = percentFn ? percentFn(sliderEl.value) : `${Math.round(sliderEl.value * 100)}%`;
+            vidMap[vidUID].pf[field] = sliderEl.value;
+            resetEl.disabled = sliderEl.value == defaults[field].v;
+            setFilter(vidMap[vidUID]);
+        });
+        window.addEventListener("templateChange", (e) => {
+            if(e.detail.vidUID != vidUID) return;
+            const newVal = e.detail.templateName == "default" ? defaults[field].v : vidMap[vidUID].pf[field]
+            sliderEl.value = newVal;
+            percentEl.innerHTML = percentFn ? percentFn(sliderEl.value) : `${Math.round(sliderEl.value * 100)}%`;
+            resetEl.disabled = sliderEl.value == defaults[field].v;
+        });
+        filterDiv.appendChild(resetEl);
+        videoEl.appendChild(filterDiv);
+    }
+
+    function addPlaybackRateElement(videoEl, vidUID) {
         //playback rate
         const playbackRateDiv = document.createElement("div");
         const playbackRateLabel = document.createElement("label");
         playbackRateLabel.innerHTML = "Speed:";
         const playbackRateMultiplier = document.createElement("span");
-        playbackRateMultiplier.innerHTML = `${videos[i].playbackRate}x`;
+        playbackRateMultiplier.innerHTML = `${vidMap[vidUID].playbackRate}x`;
         const playbackRateSlider = document.createElement("input");
         playbackRateSlider.type = "range";
         playbackRateSlider.min = defaults.playbackRate.min;
         playbackRateSlider.step = defaults.playbackRate.step;
         playbackRateSlider.max = defaults.playbackRate.max;
-        playbackRateSlider.value = videos[i].playbackRate;
+        playbackRateSlider.value = vidMap[vidUID].playbackRate;
         playbackRateDiv.appendChild(playbackRateLabel);
         playbackRateDiv.appendChild(playbackRateSlider);
         playbackRateDiv.appendChild(playbackRateMultiplier);
-        //playback rate reset button
         const playbackRateReset = document.createElement("button");
-        playbackRateReset.disabled = videos[i].playbackRate == defaults.playbackRate.v;
+        playbackRateReset.setAttribute('id', 'resetBtn');
+        playbackRateReset.disabled = vidMap[vidUID].playbackRate == defaults.playbackRate.v;
         playbackRateReset.addEventListener("click", () => {
             playbackRateSlider.value = 1;
             playbackRateMultiplier.innerHTML = `${playbackRateSlider.value}x`;
-            vidMap[videos[i].index].playbackRate = playbackRateSlider.value;
+            vidMap[vidUID].playbackRate = playbackRateSlider.value;
             playbackRateReset.disabled = true;
-            setPlaybackRate(videos[i].index, vidMap[videos[i].index]);
+            setPlaybackRate(vidMap[vidUID]);
         });
         playbackRateSlider.addEventListener("input", () => {
             //set playbackRate val and update playbackRate
             playbackRateMultiplier.innerHTML = `${playbackRateSlider.value}x`;
-            vidMap[videos[i].index].playbackRate = playbackRateSlider.value;
+            vidMap[vidUID].playbackRate = playbackRateSlider.value;
             playbackRateReset.disabled = playbackRateSlider.value == defaults.playbackRate.v;
-            setPlaybackRate(videos[i].index, vidMap[videos[i].index]);
+            setPlaybackRate(vidMap[vidUID]);
+        });
+        window.addEventListener("templateChange", (e) => {
+            if(e.detail.vidUID != vidUID) return;
+            playbackRateMultiplier.innerHTML = `${vidMap[vidUID].playbackRate}x`;
+            playbackRateSlider.value = vidMap[vidUID].playbackRate;
+            playbackRateReset.disabled = playbackRateSlider.value == defaults.playbackRate.v;
         });
         playbackRateDiv.appendChild(playbackRateReset);
         videoEl.appendChild(playbackRateDiv);
     }
 
-    function setFilter(index, video) {
+    function setFilter(video) {
         const filter = video.pf;
         chrome.storage.local.set({ videoStyleFilter: pfToString(filter) });
-        chrome.storage.local.set({ videoIndex: index });
+        chrome.storage.local.set({ videoIndex: video.localIndex });
         chrome.storage.local.set({ frameUri: video.uri });
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
@@ -455,10 +289,10 @@ async function main(defaults) {
             },
         }, _ => !chrome.runtime.lastError || console.log("Error(setFilter): ", chrome.runtime.lastError));
     }
-    function setPlaybackRate(index, video) {
+    function setPlaybackRate(video) {
         const playbackRate = video.playbackRate;
         chrome.storage.local.set({ videoPlaybackRate: playbackRate });
-        chrome.storage.local.set({ videoIndex: index });
+        chrome.storage.local.set({ videoIndex: video.localIndex });
         chrome.storage.local.set({ frameUri: video.uri });
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
@@ -475,8 +309,8 @@ async function main(defaults) {
             },
         }, _ => !chrome.runtime.lastError || console.log('Error(setPlayBackRate): ', chrome.runtime.lastError));
     }
-    function reqPIP(index, video) {
-        chrome.storage.local.set({ videoIndex: index });
+    function reqPIP(video) {
+        chrome.storage.local.set({ videoIndex: video.localIndex });
         chrome.storage.local.set({ frameUri: video.uri });
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },

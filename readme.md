@@ -2,7 +2,7 @@
 Chrome extension for manipulating style.filters on html5 video tags.
 
 ## Changelog
-### WIP 1.2.0
+### 1.2.0
 * WIP presets
 ### 1.1.0
 * added Picture in Picture toggle.

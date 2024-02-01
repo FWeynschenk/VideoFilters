@@ -24,23 +24,11 @@ function main(defaults) {
         divEl.appendChild(unitEl);
         defaultListEl.appendChild(divEl);
     }
+    
     maxInputEl('Maximum Brightness: ', 'x', 'number', 'brightness');
     maxInputEl('Maximum Contrast: ', 'x', 'number', 'contrast');
-    maxInputEl('Maximum Saturation: ', 'x', 'number', 'saturation');
+    maxInputEl('Maximum Saturation: ', 'x', 'number', 'saturate');
     maxInputEl('Maximum Blur: ', 'px', 'number', 'blur');
     maxInputEl('Maximum Playback Rate: ', 'x', 'number', 'playbackRate');
-    
-    
-    console.log("templates", defaults.templates); //TODO REMOVE
-    const addTemplateBtn = document.getElementById('addTemplateBtn');
-    addTemplateBtn.addEventListener('click', () => {
-        const newTemplateName = prompt("Please enter new preset name:");
-        if (newTemplateName == null || newTemplateName == "") { return; }
-        addTemplate(newTemplateName)
-    })
-    
-    function addTemplate(name) {
-        console.log(name); //TODO
-    }
 }
 
