@@ -8,6 +8,8 @@ Chrome extension for
 
 
 ## Changelog
+### 1.2.1
+* removal of dangling button
 ### 1.2.0
 * presets
 ### 1.1.0
