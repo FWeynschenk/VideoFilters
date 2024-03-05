@@ -23,14 +23,14 @@ async function main(defaults) {
 
     chrome.runtime.onMessage.addListener((request, _, sendResponse) => {
         if (request.greeting === "videos") {
-            sendResponse({ greeting: 'success' });
+            sendResponse({ greeting: "success" });
             if(request.videos.length > 0) {
                 videoList.push(...request.videos);
                 vidQueue.push(...request.videos);
                 addVideoRunner();
             }
         } else {
-            sendResponse({ greeting: 'failure' });
+            sendResponse({ greeting: "failure" });
         }
     });
 
@@ -40,7 +40,13 @@ async function main(defaults) {
             function mapVid(vid, index) {
                 return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href };
             }
-            const vids = Array.from(document.querySelectorAll("video")).map(mapVid);
+            let nodes = Array.from(document.querySelectorAll("video"))??[];
+            for (const {shadowRoot} of document.querySelectorAll("*")) {
+                if (shadowRoot) {
+                    nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                }
+            }
+            const vids = nodes.map(mapVid);
             chrome.runtime.sendMessage({ greeting: "videos", videos: vids });
         },
     }, _ => !chrome.runtime.lastError || console.log("Error(getVids):", chrome.runtime.lastError));
@@ -120,9 +126,9 @@ async function main(defaults) {
         }
 
         const saveBtn = document.createElement("button");
-        saveBtn.setAttribute('id', 'saveBtn');
+        saveBtn.setAttribute("id", "saveBtn");
         saveBtn.classList.add("addBtn");
-        saveBtn.addEventListener('click', () => {
+        saveBtn.addEventListener("click", () => {
             let presetName = selectEl.value;
             if(!presetName  || presetName=="undefined" || presetName=="default") presetName = prompt("Please enter new preset name");
             if (presetName == null || presetName == "") { return; }
@@ -134,8 +140,8 @@ async function main(defaults) {
             });
         });
         const delBtn = document.createElement("button");
-        delBtn.setAttribute('id', 'delBtn');
-        delBtn.addEventListener('click', () => {
+        delBtn.setAttribute("id", "delBtn");
+        delBtn.addEventListener("click", () => {
             let presetName = selectEl.value;
             if (presetName == null || presetName == "" || presetName == "default") { return; }
             const saveTemplateEvent = new CustomEvent("templateSave");
@@ -179,7 +185,7 @@ async function main(defaults) {
 
     function templateOptionEls(parent, name) {
         const newOption = document.createElement("option");
-        newOption.setAttribute('value', name);
+        newOption.setAttribute("value", name);
         newOption.innerHTML = name;
         parent.appendChild(newOption);
     }
@@ -200,7 +206,7 @@ async function main(defaults) {
         filterDiv.appendChild(sliderEl);
         filterDiv.appendChild(percentEl);
         const resetEl = document.createElement("button");
-        resetEl.setAttribute('id', 'resetBtn')
+        resetEl.setAttribute("id", "resetBtn")
         resetEl.disabled = pf[field] == defaults[field].v;
         resetEl.addEventListener("click", () => {
             sliderEl.value = defaults[field].v;
@@ -243,7 +249,7 @@ async function main(defaults) {
         playbackRateDiv.appendChild(playbackRateSlider);
         playbackRateDiv.appendChild(playbackRateMultiplier);
         const playbackRateReset = document.createElement("button");
-        playbackRateReset.setAttribute('id', 'resetBtn');
+        playbackRateReset.setAttribute("id", "resetBtn");
         playbackRateReset.disabled = vidMap[vidUID].playbackRate == defaults.playbackRate.v;
         playbackRateReset.addEventListener("click", () => {
             playbackRateSlider.value = 1;
@@ -277,11 +283,17 @@ async function main(defaults) {
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             function: () => {
-                chrome.storage.local.get('frameUri', (data) => {
+                chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
-                    chrome.storage.local.get('videoIndex', (videoIndex) => {
-                        const vid = document.querySelectorAll('video').item(videoIndex.videoIndex);
-                        chrome.storage.local.get('videoStyleFilter', (videoStyleFilter) => {
+                    chrome.storage.local.get("videoIndex", (videoIndex) => {
+                        let nodes = Array.from(document.querySelectorAll("video"))??[];
+                        for (const {shadowRoot} of document.querySelectorAll("*")) {
+                            if (shadowRoot) {
+                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                            }
+                        }
+                        const vid = nodes[videoIndex.videoIndex];
+                        chrome.storage.local.get("videoStyleFilter", (videoStyleFilter) => {
                             vid.style.filter = videoStyleFilter.videoStyleFilter;
                         });
                     });
@@ -297,17 +309,23 @@ async function main(defaults) {
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             function: () => {
-                chrome.storage.local.get('frameUri', (data) => {
+                chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
-                    chrome.storage.local.get('videoIndex', (videoIndex) => {
-                        const vid = document.querySelectorAll('video').item(videoIndex.videoIndex);
-                        chrome.storage.local.get('videoPlaybackRate', (videoPlaybackRate) => {
+                    chrome.storage.local.get("videoIndex", (videoIndex) => {
+                        let nodes = Array.from(document.querySelectorAll("video"))??[];
+                        for (const {shadowRoot} of document.querySelectorAll("*")) {
+                            if (shadowRoot) {
+                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                            }
+                        }
+                        const vid = nodes[videoIndex.videoIndex];
+                        chrome.storage.local.get("videoPlaybackRate", (videoPlaybackRate) => {
                             vid.playbackRate = videoPlaybackRate.videoPlaybackRate;
                         });
                     });
                 });
             },
-        }, _ => !chrome.runtime.lastError || console.log('Error(setPlayBackRate): ', chrome.runtime.lastError));
+        }, _ => !chrome.runtime.lastError || console.log("Error(setPlayBackRate): ", chrome.runtime.lastError));
     }
     function reqPIP(video) {
         chrome.storage.local.set({ videoIndex: video.localIndex });
@@ -315,10 +333,10 @@ async function main(defaults) {
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             function: () => {
-                chrome.storage.local.get('frameUri', (data) => {
+                chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
-                    chrome.storage.local.get('videoIndex', (videoIndex) => {
-                        const vid = document.querySelectorAll('video').item(videoIndex.videoIndex);
+                    chrome.storage.local.get("videoIndex", (videoIndex) => {
+                        const vid = document.querySelectorAll("video").item(videoIndex.videoIndex);
                         if (document.pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
                             vid.requestPictureInPicture().then(() => {
                                 document.pipIndex = videoIndex.videoIndex;
@@ -383,7 +401,7 @@ async function main(defaults) {
 }
 
 // TODO: when chrome.* stops using callbacks refactor this to use promises 
-chrome.storage.sync.get('defaults', defaults => {
+chrome.storage.sync.get("defaults", defaults => {
     main(defaults.defaults);
 });
 
