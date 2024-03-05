@@ -8,6 +8,9 @@ Chrome extension for
 
 
 ## Changelog
+### 1.2.2
+* fixed an issue where videos inside a [ShadowRoot](https://developer.mozilla.org/en-US/docs/Web/API/ShadowRoot) are not found, most notably Disney+
+* fixed settings not carrying over after an update
 ### 1.2.1
 * removal of dangling button
 ### 1.2.0

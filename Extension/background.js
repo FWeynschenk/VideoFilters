@@ -69,11 +69,11 @@ chrome.runtime.onInstalled.addListener(() => {
         } else {
             if(!data.defaults.saturate && data.defaults.saturation) {
                 data.defaults["saturate"] = data.defaults.saturation;
-                chrome.storage.sync.set({ defaults })
+                chrome.storage.sync.set({ defaults: data.defaults })
             }
             if(!data.defaults.templates) {
                 data.defaults.templates = [];
-                chrome.storage.sync.set({ defaults })
+                chrome.storage.sync.set({ defaults: data.defaults })
             }
         }
     });
