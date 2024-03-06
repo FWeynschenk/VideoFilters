@@ -47,6 +47,9 @@ async function main(defaults) {
                 }
             }
             const vids = nodes.map(mapVid);
+            for (const vid of nodes) {
+                vid.disablePictureInPicture = false;
+            }
             chrome.runtime.sendMessage({ greeting: "videos", videos: vids });
         },
     }, _ => !chrome.runtime.lastError || console.log("Error(getVids):", chrome.runtime.lastError));
@@ -336,7 +339,13 @@ async function main(defaults) {
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
                     chrome.storage.local.get("videoIndex", (videoIndex) => {
-                        const vid = document.querySelectorAll("video").item(videoIndex.videoIndex);
+                        let nodes = Array.from(document.querySelectorAll("video"))??[];
+                        for (const {shadowRoot} of document.querySelectorAll("*")) {
+                            if (shadowRoot) {
+                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                            }
+                        }
+                        const vid = nodes[videoIndex.videoIndex];
                         if (document.pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
                             vid.requestPictureInPicture().then(() => {
                                 document.pipIndex = videoIndex.videoIndex;
