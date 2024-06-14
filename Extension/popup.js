@@ -354,6 +354,9 @@ async function main(defaults) {
                     document.VF_vidRef.style.width = document.VF_vidWidth ? document.VF_vidWidth : "";
                     document.VF_vidRef.style.height = document.VF_vidHeight ? document.VF_vidHeight : "";
                     insertAt(document.VF_vidContRef, document.VF_vidRef, document.VF_vidIndex);
+                    if(document.VF_addedControls) {
+                        document.VF_vidRef.removeAttribute("controls");
+                    }
                     document.pipWindow.close();
                     document.VF_pipIndex = null;
                     document.VF_vidRef = null;
@@ -420,6 +423,10 @@ async function main(defaults) {
                                     insertAt(document.VF_vidContRef, document.VF_standinEl, document.VF_vidIndex); // set VF_standin at original video position.
                                     vid.style.width = "100vw"; // "fill window"
                                     vid.style.height = "100vh";
+                                    if(!vid.controls) {
+                                        document.VF_addedControls = true;
+                                        vid.setAttribute("controls", "");
+                                    }
 
                                 } else {
                                     clearDocPIP();
