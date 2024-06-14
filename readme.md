@@ -8,6 +8,8 @@ Chrome extension for
 
 
 ## Changelog
+### 1.3.1
+* add default browser controls to videos playing in document pip
 ### 1.3.0
 * ability to play videos in a [document pip](https://developer.mozilla.org/en-US/docs/Web/API/Document_Picture-in-Picture_AP). That does support styling, and thus supports brightness etc. like you'd expect.
 ### 1.2.3
