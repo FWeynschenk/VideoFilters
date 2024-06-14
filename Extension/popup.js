@@ -336,9 +336,26 @@ async function main(defaults) {
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             function: () => {
+
+                // <><><><><><>
+
+                function insertAt(parent, newElement, index) {
+                    if (index >= parent.children.length) {
+                        parent.appendChild(newElement);
+                    } else {
+                        parent.insertBefore(newElement, parent.children[index]);
+                    }
+                }
+                
+                function getElementIndex(element) {
+                    return Array.prototype.slice.call(element.parentNode.children).indexOf(element);
+                }
+
+                // <><><><><><>
+
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
-                    chrome.storage.local.get("videoIndex", (videoIndex) => {
+                    chrome.storage.local.get("videoIndex", async (videoIndex) => {
                         let nodes = Array.from(document.querySelectorAll("video"))??[];
                         for (const {shadowRoot} of document.querySelectorAll("*")) {
                             if (shadowRoot) {
@@ -346,13 +363,28 @@ async function main(defaults) {
                             }
                         }
                         const vid = nodes[videoIndex.videoIndex];
-                        if (document.pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
-                            vid.requestPictureInPicture().then(() => {
-                                document.pipIndex = videoIndex.videoIndex;
+                        if (document.VF_pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
+                            // vid.requestPictureInPicture().then(() => {
+                            //     document.VF_pipIndex = videoIndex.videoIndex;
+                            // });
+                            document.VF_vidRef = vid;
+                            document.VF_vidContRef = vid.parentElement;
+                            document.VF_vidIndex = getElementIndex(vid);
+                            document.pipWindow = await window.documentPictureInPicture.requestWindow({
+                                width: vid.clientWidth,
+                                height: vid.clientHeight,
                             });
+                            document.pipWindow.addEventListener("pagehide", () => {
+                                document.VF_vidContRef.append(vid);
+                                insertAt(document.VF_vidContRef, vid, document.VF_vidIndex)
+                            });
+
+                            document.pipWindow.document.body.append(vid);
+
                         } else {
-                            document.exitPictureInPicture();
-                            document.pipIndex = null;
+                            //document.exitPictureInPicture();
+                            document.VF_vidContRef.append(document.VF_vidRef);
+                            document.VF_pipIndex = null;
                         }
                     });
                 });
