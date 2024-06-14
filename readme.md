@@ -8,6 +8,8 @@ Chrome extension for
 
 
 ## Changelog
+### 1.3.0
+* ability to play videos in a [document pip](https://developer.mozilla.org/en-US/docs/Web/API/Document_Picture-in-Picture_AP). That does support styling, and thus supports brightness etc. like you'd expect.
 ### 1.2.3
 * fixed an issue where the picture in picture(pip) button didn't work for videos inside a [ShadowRoot](https://developer.mozilla.org/en-US/docs/Web/API/ShadowRoot)
 * pip button disregards videos' disable pip request. I.e. Disney+ can now be played in pip mode.

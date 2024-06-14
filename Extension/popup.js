@@ -1,4 +1,4 @@
-/*  TODOS
+/*
 *   MUST:
 *       ☺
 *   SHOULD:
@@ -24,7 +24,7 @@ async function main(defaults) {
     chrome.runtime.onMessage.addListener((request, _, sendResponse) => {
         if (request.greeting === "videos") {
             sendResponse({ greeting: "success" });
-            if(request.videos.length > 0) {
+            if (request.videos.length > 0) {
                 videoList.push(...request.videos);
                 vidQueue.push(...request.videos);
                 addVideoRunner();
@@ -40,10 +40,10 @@ async function main(defaults) {
             function mapVid(vid, index) {
                 return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href };
             }
-            let nodes = Array.from(document.querySelectorAll("video"))??[];
-            for (const {shadowRoot} of document.querySelectorAll("*")) {
+            let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
+            for (const { shadowRoot } of document.querySelectorAll("*")) {
                 if (shadowRoot) {
-                    nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                    nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
                 }
             }
             const vids = nodes.map(mapVid);
@@ -65,7 +65,7 @@ async function main(defaults) {
     function addVideoRunner() {
         if (addVideoRunning) return;
         addVideoRunning = true;
-        if(vidCounter == 0) {
+        if (vidCounter == 0) {
             videosListEl.innerHTML = "";
             videosListEl.classList.remove("noVidsFound");
         }
@@ -96,7 +96,7 @@ async function main(defaults) {
         addFilterElement(videoEl, vidUID, pf, "Grayscale:", "grayscale");
         addFilterElement(videoEl, vidUID, pf, "Hue:", "hueRotate", (val) => `${val} deg`);
         addFilterElement(videoEl, vidUID, pf, "Blur:", "blur", (val) => `${val} px`);
-        
+
         addPlaybackRateElement(videoEl, vidUID);
 
         addPresetSelector(videoEl, vidUID);
@@ -109,10 +109,10 @@ async function main(defaults) {
         const presetDiv = document.createElement("div");
         presetDiv.innerHTML = "Presets: ";
         const selectEl = document.createElement("select");
-        
+
         selectEl.addEventListener("change", (e) => {
-            let template = defaults.templates.find((templ)=>templ.name == e.target.value);
-            if(!template) {
+            let template = defaults.templates.find((templ) => templ.name == e.target.value);
+            if (!template) {
                 template = { name: "default", pf: parseFilter(""), playbackRate: defaults.playbackRate.v };
             }
 
@@ -120,11 +120,11 @@ async function main(defaults) {
             vidMap[vidUID].pf = template.pf;
             setPlaybackRate(vidMap[vidUID]);
             setFilter(vidMap[vidUID]);
-            window.dispatchEvent(new CustomEvent("templateChange", { detail: { vidUID: vidUID, templateName: e.target.value }}));
+            window.dispatchEvent(new CustomEvent("templateChange", { detail: { vidUID: vidUID, templateName: e.target.value } }));
         });
 
         templateOptionEls(selectEl, "default")
-        for(const template of defaults.templates) {
+        for (const template of defaults.templates) {
             templateOptionEls(selectEl, template.name);
         }
 
@@ -133,9 +133,9 @@ async function main(defaults) {
         saveBtn.classList.add("addBtn");
         saveBtn.addEventListener("click", () => {
             let presetName = selectEl.value;
-            if(!presetName  || presetName=="undefined" || presetName=="default") presetName = prompt("Please enter new preset name");
+            if (!presetName || presetName == "undefined" || presetName == "default") presetName = prompt("Please enter new preset name");
             if (presetName == null || presetName == "") { return; }
-            const saveTemplateEvent = new CustomEvent("templateSave", { detail: { vidUID: vidUID, templateName: presetName }});
+            const saveTemplateEvent = new CustomEvent("templateSave", { detail: { vidUID: vidUID, templateName: presetName } });
             defaults.templates = defaults.templates.filter(template => template.name != presetName);
             defaults.templates.push({ name: presetName, pf: vidMap[vidUID].pf, playbackRate: vidMap[vidUID].playbackRate });
             chrome.storage.sync.set({ defaults }).then(() => {
@@ -158,12 +158,12 @@ async function main(defaults) {
             addPresetSelector(videoEl, vidUID, e.detail?.vidUID == vidUID ? e.detail.templateName : undefined);
         }, { once: true });
         window.addEventListener("templateChange", (e) => {
-            if(e.detail.vidUID != vidUID) return;
+            if (e.detail.vidUID != vidUID) return;
             selectEl.value = e.detail.templateName;
             updateBtnStates();
         });
 
-        if(preselectedValue) {
+        if (preselectedValue) {
             selectEl.value = preselectedValue;
         } else {
             selectEl.value = undefined;
@@ -174,9 +174,9 @@ async function main(defaults) {
         presetDiv.appendChild(saveBtn);
         presetDiv.appendChild(delBtn);
         videoEl.appendChild(presetDiv);
-        
+
         function updateBtnStates() {
-            if(!selectEl.value || selectEl.value == "default") {
+            if (!selectEl.value || selectEl.value == "default") {
                 saveBtn.classList.add("addBtn");
                 delBtn.disabled = true;
             } else {
@@ -225,7 +225,7 @@ async function main(defaults) {
             setFilter(vidMap[vidUID]);
         });
         window.addEventListener("templateChange", (e) => {
-            if(e.detail.vidUID != vidUID) return;
+            if (e.detail.vidUID != vidUID) return;
             const newVal = e.detail.templateName == "default" ? defaults[field].v : vidMap[vidUID].pf[field]
             sliderEl.value = newVal;
             percentEl.innerHTML = percentFn ? percentFn(sliderEl.value) : `${Math.round(sliderEl.value * 100)}%`;
@@ -269,7 +269,7 @@ async function main(defaults) {
             setPlaybackRate(vidMap[vidUID]);
         });
         window.addEventListener("templateChange", (e) => {
-            if(e.detail.vidUID != vidUID) return;
+            if (e.detail.vidUID != vidUID) return;
             playbackRateMultiplier.innerHTML = `${vidMap[vidUID].playbackRate}x`;
             playbackRateSlider.value = vidMap[vidUID].playbackRate;
             playbackRateReset.disabled = playbackRateSlider.value == defaults.playbackRate.v;
@@ -289,10 +289,10 @@ async function main(defaults) {
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
                     chrome.storage.local.get("videoIndex", (videoIndex) => {
-                        let nodes = Array.from(document.querySelectorAll("video"))??[];
-                        for (const {shadowRoot} of document.querySelectorAll("*")) {
+                        let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
+                        for (const { shadowRoot } of document.querySelectorAll("*")) {
                             if (shadowRoot) {
-                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
                             }
                         }
                         const vid = nodes[videoIndex.videoIndex];
@@ -315,10 +315,10 @@ async function main(defaults) {
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
                     chrome.storage.local.get("videoIndex", (videoIndex) => {
-                        let nodes = Array.from(document.querySelectorAll("video"))??[];
-                        for (const {shadowRoot} of document.querySelectorAll("*")) {
+                        let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
+                        for (const { shadowRoot } of document.querySelectorAll("*")) {
                             if (shadowRoot) {
-                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
                             }
                         }
                         const vid = nodes[videoIndex.videoIndex];
@@ -336,24 +336,106 @@ async function main(defaults) {
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             function: () => {
+
+                function insertAt(parent, newElement, index) {
+                    if (index >= parent.children.length) {
+                        parent.appendChild(newElement);
+                    } else {
+                        parent.insertBefore(newElement, parent.children[index]);
+                    }
+                }
+
+                function getElementIndex(element) {
+                    return Array.prototype.slice.call(element.parentNode.children).indexOf(element);
+                }
+
+                function clearDocPIP() {
+                    document.VF_vidContRef.append(document.VF_vidRef);
+                    document.VF_vidRef.style.width = document.VF_vidWidth ? document.VF_vidWidth : "";
+                    document.VF_vidRef.style.height = document.VF_vidHeight ? document.VF_vidHeight : "";
+                    insertAt(document.VF_vidContRef, document.VF_vidRef, document.VF_vidIndex);
+                    document.pipWindow.close();
+                    document.VF_pipIndex = null;
+                    document.VF_vidRef = null;
+                    document.VF_vidContRef = null;
+                    document.VF_vidIndex = null;
+                    document.VF_vidWidth = null;
+                    document.VF_vidHeight = null;
+                    document.VF_standinEl.remove();
+                }
+
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
-                    chrome.storage.local.get("videoIndex", (videoIndex) => {
-                        let nodes = Array.from(document.querySelectorAll("video"))??[];
-                        for (const {shadowRoot} of document.querySelectorAll("*")) {
+                    chrome.storage.local.get("videoIndex", async (videoIndex) => {
+                        let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
+                        for (const { shadowRoot } of document.querySelectorAll("*")) {
                             if (shadowRoot) {
-                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video"))??[]);
+                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
                             }
                         }
                         const vid = nodes[videoIndex.videoIndex];
-                        if (document.pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
-                            vid.requestPictureInPicture().then(() => {
-                                document.pipIndex = videoIndex.videoIndex;
-                            });
-                        } else {
-                            document.exitPictureInPicture();
-                            document.pipIndex = null;
-                        }
+                        chrome.storage.sync.get("advancedPIPEnabled", async enabled => {
+                            if (enabled.advancedPIPEnabled) {
+                                if (document.VF_pipIndex !== videoIndex.videoIndex) {
+                                    document.VF_pipIndex = videoIndex.videoIndex;
+                                    document.VF_vidRef = vid;
+                                    document.VF_vidContRef = vid.parentElement;
+                                    document.VF_vidIndex = getElementIndex(vid);
+                                    document.VF_vidWidth = vid.style?.width ?? 0;
+                                    document.VF_vidHeight = vid.style?.height ?? 0;
+
+                                    document.VF_standinEl = document.createElement("div");
+                                    document.VF_standinEl.style = {};
+                                    document.VF_standinEl.width = vid.clientWidth;
+                                    document.VF_standinEl.height = vid.clientHeight;
+                                    document.VF_standinEl.uri = vid.uri;
+                                    document.VF_standinEl.index = vid.index;
+                                    Object.defineProperty(document.VF_standinEl, 'playbackRate', {
+                                        get: () => vid.playbackRate,
+                                        set: function (value) {
+                                            vid.playbackRate = value;
+                                        }
+                                    });
+                                    Object.defineProperty(document.VF_standinEl.style, 'filter', {
+                                        get: () => vid.style.filter,
+                                        set: function (value) {
+                                            vid.style.filter = value;
+                                        }
+                                    });
+
+                                    document.VF_standinEl.classList.add("VF_standin");
+
+                                    document.pipWindow = await window.documentPictureInPicture.requestWindow({
+                                        width: vid.clientWidth,
+                                        height: vid.clientHeight,
+                                    });
+                                    document.pipWindow.document.body.style = "margin: 0; background-color: black;"
+                                    document.pipWindow.addEventListener("pagehide", clearDocPIP);
+
+                                    document.pipWindow.document.body.append(vid);
+                                    document.pipWindow.document.body.addEventListener("click", () => {
+                                        vid.paused ? vid.play() : vid.pause();
+                                    });
+
+                                    insertAt(document.VF_vidContRef, document.VF_standinEl, document.VF_vidIndex); // set VF_standin at original video position.
+                                    vid.style.width = "100vw"; // "fill window"
+                                    vid.style.height = "100vh";
+
+                                } else {
+                                    clearDocPIP();
+                                }
+                            } else { // simple 
+                                if (document.VF_pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
+                                    vid.requestPictureInPicture().then(() => {
+                                        document.VF_pipIndex = videoIndex.videoIndex;
+                                    });
+                                } else {
+                                    document.exitPictureInPicture();
+                                    document.VF_pipIndex = null;
+                                }
+                            }
+                        })
+
                     });
                 });
             },
@@ -412,6 +494,15 @@ async function main(defaults) {
 // TODO: when chrome.* stops using callbacks refactor this to use promises 
 chrome.storage.sync.get("defaults", defaults => {
     main(defaults.defaults);
+});
+
+chrome.storage.sync.get("advancedPIPEnabled", enabled => {
+    const toggle = document.getElementById("advancedPIP");
+    if (enabled.advancedPIPEnabled) toggle.checked = true;
+    toggle.addEventListener("change", () => {
+        console.log(toggle.checked);
+        chrome.storage.sync.set({ "advancedPIPEnabled": toggle.checked });
+    });
 });
 
 function sleep(ms) {
