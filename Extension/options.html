@@ -25,7 +25,11 @@
       <div class="shader-format-info">
         Required format:
         <ul>
-          <li><code>precision mediump float;</code> Also allowed are <code>highp</code> and <code>lowp</code></li>
+          <li><code>precision: <select id="precisionSelect">
+            <option value="mediump">mediump</option>
+            <option value="highp">highp</option>
+            <option value="lowp">lowp</option>
+          </select> float;</code></li>
           <li><code>uniform sampler2D u_texture;</code></li>
           <li><code>uniform vec2 u_textureSize;</code></li>
           <li><code>varying vec2 v_texCoord;</code></li>

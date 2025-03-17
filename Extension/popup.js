@@ -15,12 +15,10 @@ async function main(defaults) {
     const videosListEl = document.getElementById("videosList");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    // Check if shared functions are already injected before injecting them
     chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
         func: () => typeof VF_findVideos !== 'undefined'
     }).then((results) => {
-        // Only inject if shared functions are not already present
         if (!results[0].result) {
             chrome.scripting.executeScript({
                 target: { tabId: tab.id, allFrames: true },
@@ -68,7 +66,6 @@ async function main(defaults) {
         },
     }, _ => !chrome.runtime.lastError || console.log("Error(getVids):", chrome.runtime.lastError));
 
-    // give it time to find videos before telling user there aren't any
     await sleep(1000).then(() => {
         if (videoList.length === 0) {
             videosListEl.classList.add("noVidsFound");
@@ -254,7 +251,6 @@ async function main(defaults) {
     }
 
     function addPlaybackRateElement(videoEl, vidUID) {
-        //playback rate
         const playbackRateDiv = document.createElement("div");
         const playbackRateLabel = document.createElement("label");
         playbackRateLabel.innerHTML = "Speed:";
@@ -280,7 +276,6 @@ async function main(defaults) {
             setPlaybackRate(vidMap[vidUID]);
         });
         playbackRateSlider.addEventListener("input", () => {
-            //set playbackRate val and update playbackRate
             playbackRateMultiplier.innerHTML = `${playbackRateSlider.value}x`;
             vidMap[vidUID].playbackRate = playbackRateSlider.value;
             playbackRateReset.disabled = playbackRateSlider.value == defaults.playbackRate.v;
@@ -297,10 +292,8 @@ async function main(defaults) {
     }
 
     function addShaderElements(video, container) {
-        // Create a deterministic ID for this video's shader
         const shaderId = `vf-shader-${video.localIndex}-${video.uri}`;
         
-        // Create checkbox container
         const checkboxDiv = document.createElement("div");
         checkboxDiv.style.paddingTop = "10px";
         const checkbox = document.createElement("input");
@@ -437,14 +430,12 @@ async function main(defaults) {
                 target: { tabId: tab.id },
                 func: () => typeof VF_SHADERS !== 'undefined'
             }).then(() => {
-                // Get shader strings from storage.
                 return chrome.storage.sync.get(['defaults']);
             }).then((data) => {
                 const shaderStrings = data.defaults.shader;
                 return chrome.scripting.executeScript({
                     target: { tabId: tab.id },
                     func: (shaderStrings) => {
-                        // Define shaders globally
                         window.VF_SHADERS = shaderStrings;
                     },
                     args: [shaderStrings]
@@ -495,7 +486,6 @@ async function main(defaults) {
                                             video.cancelVideoFrameCallback(window[`renderCallback_${shaderId}`]);
                                             delete window[`renderCallback_${shaderId}`];
                                         }
-                                        // Store original opacity before making video transparent
                                         const originalOpacity = video.getAttribute('data-original-opacity');
                                         if (originalOpacity !== null) {
                                             video.style.opacity = originalOpacity;
@@ -504,7 +494,6 @@ async function main(defaults) {
                                             video.style.opacity = '1';
                                         }
                                         
-                                        // Clean up the filter observer
                                         const filterObserver = window[`filterObserver_${shaderId}`];
                                         if (filterObserver) {
                                             filterObserver.disconnect();
@@ -529,7 +518,6 @@ async function main(defaults) {
                         chrome.scripting.executeScript({
                             target: { tabId: tab.id },
                             func: (videoIndex, shaderId, uniforms) => {
-                                // Find the video at the specified index
                                 const videos = VF_findVideos();
                                 if (videoIndex >= videos.length) {
                                     console.error('Video index out of range');
@@ -537,42 +525,31 @@ async function main(defaults) {
                                 }
                                 const video = videos[videoIndex];
                                 
-                                // Create canvas for WebGL rendering
                                 const canvas = document.createElement('canvas');
                                 canvas.id = shaderId;
                                 canvas.width = video.videoWidth;
                                 canvas.height = video.videoHeight;
                                 
-                                // Get video's computed style and position
                                 const videoStyle = getComputedStyle(video);
                                 
-                                // Handle z-index properly
                                 const videoZIndex = parseInt(videoStyle.zIndex) || 0;
                                 const videoParentZIndex = parseInt(getComputedStyle(video.parentElement).zIndex) || 0;
                                 
-                                // Place canvas just below the video's z-index, but above the parent's z-index
                                 const canvasZIndex = Math.max(videoZIndex - 1, videoParentZIndex + 1);
                                 canvas.style.zIndex = canvasZIndex;
                                 
-                                // Set absolute positioning
                                 canvas.style.position = 'absolute';
                                 
-                                // Apply the video's filter to the canvas
                                 canvas.style.filter = video.style.filter;
                                 
-                                // Insert canvas as a direct child of body
                                 document.body.appendChild(canvas);
                                 
-                                // Make video transparent but keep controls visible
-                                // Store original opacity before making video transparent
                                 const originalOpacity = video.style.opacity;
                                 video.setAttribute('data-original-opacity', originalOpacity);
                                 video.style.opacity = '0';
                                 
-                                // Ensure video stays above canvas
                                 video.style.position = videoStyle.position === 'static' ? 'relative' : videoStyle.position;
                                 
-                                // Create a MutationObserver to watch for filter changes on the video
                                 const filterObserver = new MutationObserver((mutations) => {
                                     mutations.forEach((mutation) => {
                                         if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
@@ -582,23 +559,19 @@ async function main(defaults) {
                                     });
                                 });
                                 
-                                // Start observing the video's style attribute
                                 filterObserver.observe(video, {
                                     attributes: true,
                                     attributeFilter: ['style']
                                 });
                                 
-                                // Store the observer for cleanup
                                 window[`filterObserver_${shaderId}`] = filterObserver;
                                 
-                                // Initialize WebGL
                                 const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
                                 if (!gl) {
                                     console.error('WebGL not supported');
                                     return;
                                 }
                                 
-                                // Create shader program
                                 const vertexShader = gl.createShader(gl.VERTEX_SHADER);
                                 gl.shaderSource(vertexShader, VF_SHADERS.vertex);
                                 gl.compileShader(vertexShader);
@@ -613,7 +586,6 @@ async function main(defaults) {
                                 gl.linkProgram(program);
                                 gl.useProgram(program);
                                 
-                                // Check for compilation/linking errors
                                 if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
                                     console.error('Vertex shader compilation failed:', gl.getShaderInfoLog(vertexShader));
                                     return;
@@ -627,7 +599,6 @@ async function main(defaults) {
                                     return;
                                 }
                                 
-                                // Create a buffer for the position (two triangles forming a rectangle)
                                 const positionBuffer = gl.createBuffer();
                                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -639,7 +610,6 @@ async function main(defaults) {
                                     1.0,  1.0
                                 ]), gl.STATIC_DRAW);
                                 
-                                // Create a buffer for the texture coordinates - FIXED to flip vertically
                                 const texCoordBuffer = gl.createBuffer();
                                 gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
                                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -651,7 +621,6 @@ async function main(defaults) {
                                     1.0, 0.0 
                                 ]), gl.STATIC_DRAW);
                                 
-                                // Set up texture
                                 const texture = gl.createTexture();
                                 gl.bindTexture(gl.TEXTURE_2D, texture);
                                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -659,13 +628,11 @@ async function main(defaults) {
                                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
                                 
-                                // Look up uniforms and attributes
                                 const positionLocation = gl.getAttribLocation(program, "a_position");
                                 const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
                                 const textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
                                 const textureLocation = gl.getUniformLocation(program, "u_texture");
 
-                                // Set up attributes
                                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                                 gl.enableVertexAttribArray(positionLocation);
                                 gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
@@ -686,31 +653,26 @@ async function main(defaults) {
                                     }
                                 }                                
                                                                 
-                                // Function to update canvas position
                                 const updateCanvasPosition = () => {
                                     const videoRect = video.getBoundingClientRect();
                                     const scrollX = window.scrollX;
                                     const scrollY = window.scrollY;
                                     
-                                    // Set canvas position to match video exactly
                                     canvas.style.left = (videoRect.left + scrollX) + 'px';
                                     canvas.style.top = (videoRect.top + scrollY) + 'px';
                                     canvas.style.width = videoRect.width + 'px';
                                     canvas.style.height = videoRect.height + 'px';
                                     
-                                    // Update WebGL viewport and canvas dimensions
                                     canvas.width = video.videoWidth;
                                     canvas.height = video.videoHeight;
                                     gl.viewport(0, 0, canvas.width, canvas.height);
                                 };
                                 updateCanvasPosition();
                                 
-                                // Update canvas position on resize and scroll
                                 const resizeObserver = new ResizeObserver(updateCanvasPosition);
                                 resizeObserver.observe(video);
                                 window.addEventListener('scroll', updateCanvasPosition, { passive: true });
                                 
-                                // Render loop
                                 function render(forced) {
                                     console.log("RENDER");
                                     gl.bindTexture(gl.TEXTURE_2D, texture);

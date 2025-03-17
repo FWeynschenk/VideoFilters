@@ -12,11 +12,9 @@ function parseShaderUniforms(fragmentShader) {
         const [_, type, name, comment] = match;
         const propertyString = comment.trim();
         
-        // Parse the property string into an object
         const propertyObj = {};
         propertyString.split(',').forEach(prop => {
             const [key, value] = prop.split(':').map(s => s.trim());
-            // Convert string values to appropriate types
             if (value === 'true' || value === 'false') {
                 propertyObj[key] = value === 'true';
             } else if (!isNaN(value)) {

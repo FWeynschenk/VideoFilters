@@ -1,5 +1,4 @@
 // Shared functions for VideoFilters extension
-// All functions are namespaced with VF_ prefix to avoid conflicts
 
 function VF_findVideos() {
     let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
