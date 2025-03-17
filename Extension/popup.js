@@ -52,7 +52,7 @@ async function main(defaults) {
         target: { tabId: tab.id, allFrames: true },
         function: () => {
             function mapVid(vid, index) {
-                return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href };
+                return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href, width: vid.videoWidth, height: vid.videoHeight };
             }
             let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
             for (const { shadowRoot } of document.querySelectorAll("*")) {
@@ -83,7 +83,9 @@ async function main(defaults) {
             videosListEl.innerHTML = "";
             videosListEl.classList.remove("noVidsFound");
         }
+        vidQueue.sort((a, b) => a.width * a.height - b.width * b.height);
         const newVideo = vidQueue.pop();
+        console.log(newVideo.width, newVideo.height);
         const pf = parseFilter(newVideo.filter);
         const vidUID = `${newVideo.index}-${newVideo.uri}`
         vidMap[vidUID] = { localIndex: newVideo.index, pf: pf, playbackRate: newVideo.playbackRate, uri: newVideo.uri };
@@ -312,231 +314,120 @@ async function main(defaults) {
         checkboxDiv.appendChild(checkboxLabel);
         checkboxDiv.appendChild(checkbox);
         container.appendChild(checkboxDiv);
-        
 
-        // Create sharpness controls container
-        const sharpnessDiv = document.createElement("div");
-        const sharpnessLabel = document.createElement("label");
-        sharpnessLabel.innerHTML = "Sharpness:";
-        const sharpnessValue = document.createElement("span");
-        sharpnessValue.innerHTML = "0.0";
-        const sharpnessSlider = document.createElement("input");
-        sharpnessSlider.type = "range";
-        sharpnessSlider.min = "-1";
-        sharpnessSlider.max = "3";
-        sharpnessSlider.step = "0.1";
-        sharpnessSlider.value = "0.0";
-        sharpnessDiv.style.display = "none"; // Initially hidden until shader is active
-        
-        // Create vignette controls container
-        const vignetteDiv = document.createElement("div");
-        const vignetteLabel = document.createElement("label");
-        vignetteLabel.innerHTML = "Vignette:";
-        const vignetteValue = document.createElement("span");
-        vignetteValue.innerHTML = "0.0";
-        const vignetteSlider = document.createElement("input");
-        vignetteSlider.type = "range";
-        vignetteSlider.min = "0";
-        vignetteSlider.max = "1";
-        vignetteSlider.step = "0.1";
-        vignetteSlider.value = "0.0";
-        vignetteDiv.style.display = "none"; // Initially hidden until shader is active
-        
-        // Create temperature controls container
-        const temperatureDiv = document.createElement("div");
-        const temperatureLabel = document.createElement("label");
-        temperatureLabel.innerHTML = "Temperature:";
-        const temperatureValue = document.createElement("span");
-        temperatureValue.innerHTML = "0.0";
-        const temperatureSlider = document.createElement("input");
-        temperatureSlider.type = "range";
-        temperatureSlider.min = "-1";
-        temperatureSlider.max = "1";
-        temperatureSlider.step = "0.1";
-        temperatureSlider.value = "0.0";
-        temperatureDiv.style.display = "none"; // Initially hidden until shader is active
-        
-        // Add elements to containers
-        sharpnessDiv.appendChild(sharpnessLabel);
-        sharpnessDiv.appendChild(sharpnessSlider);
-        sharpnessDiv.appendChild(sharpnessValue);
-        
-        vignetteDiv.appendChild(vignetteLabel);
-        vignetteDiv.appendChild(vignetteSlider);
-        vignetteDiv.appendChild(vignetteValue);
-        
-        temperatureDiv.appendChild(temperatureLabel);
-        temperatureDiv.appendChild(temperatureSlider);
-        temperatureDiv.appendChild(temperatureValue);
+        const shaderFragment = defaults.shader.fragment;
+        const uniforms = parseShaderUniforms(shaderFragment);
+        for (const [name, props] of Object.entries(uniforms)) {
+            const controlDiv = document.createElement("div");
+            const label = document.createElement("label");
+            label.innerHTML = props.label + ";";
+            const valueEl = document.createElement("span");
+            valueEl.innerHTML = props.default.toFixed(1);
+            const sliderEl = document.createElement("input");
+            sliderEl.id = `slider-${shaderId}-${name}`;
+            sliderEl.type = "range";
+            sliderEl.min = props.min;
+            sliderEl.max = props.max;
+            sliderEl.value = props.default;
+            sliderEl.step = 0.1;
+            sliderEl.disabled = true;
 
-        // Add reset buttons
-        const sharpnessReset = document.createElement("button");
-        sharpnessReset.setAttribute("id", "resetBtn");
-        sharpnessReset.disabled = true;
-        sharpnessReset.addEventListener("click", () => {
-            sharpnessSlider.value = "0.0";
-            sharpnessValue.innerHTML = "0.0";
-            sharpnessReset.disabled = true;
-            
-            if (checkbox.checked) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, value) => {
-                        const updateSharpness = window[`updateSharpness_${shaderId}`];
-                        if (updateSharpness) {
-                            updateSharpness(value);
-                            window[`currentSharpness_${shaderId}`] = value;
-                        }
-                    },
-                    args: [shaderId, 0.0]
-                });
-            }
-        });
-        
-        const vignetteReset = document.createElement("button");
-        vignetteReset.setAttribute("id", "resetBtn");
-        vignetteReset.disabled = true;
-        vignetteReset.addEventListener("click", () => {
-            vignetteSlider.value = "0.0";
-            vignetteValue.innerHTML = "0.0";
-            vignetteReset.disabled = true;
-            
-            if (checkbox.checked) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, value) => {
-                        const updateVignette = window[`updateVignette_${shaderId}`];
-                        if (updateVignette) {
-                            updateVignette(value);
-                            window[`currentVignette_${shaderId}`] = value;
-                        }
-                    },
-                    args: [shaderId, 0.0]
-                });
-            }
-        });
-        
-        const temperatureReset = document.createElement("button");
-        temperatureReset.setAttribute("id", "resetBtn");
-        temperatureReset.disabled = true;
-        temperatureReset.addEventListener("click", () => {
-            temperatureSlider.value = "0.0";
-            temperatureValue.innerHTML = "0.0";
-            temperatureReset.disabled = true;
-            
-            if (checkbox.checked) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, value) => {
-                        const updateTemperature = window[`updateTemperature_${shaderId}`];
-                        if (updateTemperature) {
-                            updateTemperature(value);
-                            window[`currentTemperature_${shaderId}`] = value;
-                        }
-                    },
-                    args: [shaderId, 0.0]
-                });
-            }
-        });
+            controlDiv.appendChild(label);
+            controlDiv.appendChild(sliderEl);
+            controlDiv.appendChild(valueEl);
 
-        // Add event listeners for sliders
-        sharpnessSlider.addEventListener("input", () => {
-            const value = parseFloat(sharpnessSlider.value);
-            sharpnessValue.innerHTML = value.toFixed(1);
-            sharpnessReset.disabled = value === 0.0;
-            
-            if (checkbox.checked) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, value) => {
-                        const updateSharpness = window[`updateSharpness_${shaderId}`];
-                        if (updateSharpness) {
-                            updateSharpness(value);
-                            window[`currentSharpness_${shaderId}`] = value;
-                        }
-                    },
-                    args: [shaderId, value]
-                });
-            }
-        });
-        
-        vignetteSlider.addEventListener("input", () => {
-            const value = parseFloat(vignetteSlider.value);
-            vignetteValue.innerHTML = value.toFixed(1);
-            vignetteReset.disabled = value === 0.0;
-            
-            if (checkbox.checked) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, value) => {
-                        const updateVignette = window[`updateVignette_${shaderId}`];
-                        if (updateVignette) {
-                            updateVignette(value);
-                            window[`currentVignette_${shaderId}`] = value;
-                        }
-                    },
-                    args: [shaderId, value]
-                });
-            }
-        });
-        
-        temperatureSlider.addEventListener("input", () => {
-            const value = parseFloat(temperatureSlider.value);
-            temperatureValue.innerHTML = value.toFixed(1);
-            temperatureReset.disabled = value === 0.0;
-            
-            if (checkbox.checked) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, value) => {
-                        const updateTemperature = window[`updateTemperature_${shaderId}`];
-                        if (updateTemperature) {
-                            updateTemperature(value);
-                            window[`currentTemperature_${shaderId}`] = value;
-                        }
-                    },
-                    args: [shaderId, value]
-                });
-            }
-        });
+            const resetBtn = document.createElement("button");
+            resetBtn.setAttribute("id", "resetBtn");
+            resetBtn.disabled = true;
+            resetBtn.addEventListener("click", () => {
+                sliderEl.value = props.default;
+                valueEl.innerHTML = props.default.toFixed(1);
+                resetBtn.disabled = true;
+                
+                if (checkbox.checked) {
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        func: (shaderId, value, name) => {
+                            const updateUniform = window[`update${name}_${shaderId}`];
+                            if (updateUniform) {
+                                updateUniform(value);
+                                window[`current${name}_${shaderId}`] = value;
+                            }
+                        },
+                        args: [shaderId, props.default, name]
+                    });
+                }
+            });
 
-        // Add reset buttons to containers
-        sharpnessDiv.appendChild(sharpnessReset);
-        vignetteDiv.appendChild(vignetteReset);
-        temperatureDiv.appendChild(temperatureReset);
+            sliderEl.addEventListener("input", () => {
+                const value = parseFloat(sliderEl.value);
+                valueEl.innerHTML = value.toFixed(1);
+                resetBtn.disabled = value === props.default;
+                
+                if (checkbox.checked) {
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        func: (shaderId, value, name) => {
+                            const updateUniform = window[`update${name}_${shaderId}`];
+                            if (updateUniform) {
+                                updateUniform(value);
+                                window[`current${name}_${shaderId}`] = value;
+                            }
+                        },
+                        args: [shaderId, value, name]
+                    });
+                }
+            });
 
-        // Add containers to main container
-        container.appendChild(sharpnessDiv);
-        container.appendChild(vignetteDiv);
-        container.appendChild(temperatureDiv);
+            controlDiv.appendChild(resetBtn);
+            container.appendChild(controlDiv);
+        }
+
 
         // Check if shader is already active for this video
         chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            func: (shaderId) => {
+            func: (shaderId, uniforms) => {
                 const canvas = document.getElementById(shaderId);
-                if (canvas) {
-                    return {
-                        isActive: true,
-                        sharpness: window[`currentSharpness_${shaderId}`] || 1.0
-                    };
+                const dynamicUniforms = [];
+                for (const [name, props] of Object.entries(uniforms)) {
+                    dynamicUniforms.push({
+                        name: name,
+                        value: window[`current${name}_${shaderId}`] || props.default,
+                        defaultValue: props.default,
+                    });
                 }
-                return { isActive: false, sharpness: 1.0 };
+                if (canvas) {
+                    const currentUniforms = {
+                        isActive: true,
+                        dynamic: dynamicUniforms,
+                    };
+                    
+                    return currentUniforms;
+                }
+                return { isActive: false, dynamic: dynamicUniforms };
             },
-            args: [shaderId]
+            args: [shaderId, uniforms]
         }).then((results) => {
-            const { isActive, sharpness } = results[0].result;
+            const { isActive, dynamic } = results[0].result;
             if (isActive) {
                 checkbox.checked = true;
-                sharpnessDiv.style.display = "grid";
-                sharpnessSlider.value = sharpness;
-                sharpnessValue.innerHTML = sharpness.toFixed(1);
-                vignetteDiv.style.display = "grid";
-                vignetteSlider.value = window[`currentVignette_${shaderId}`] || 0.0;
-                vignetteValue.innerHTML = (window[`currentVignette_${shaderId}`] * 100).toFixed(1) + "%";
-                temperatureDiv.style.display = "grid";
-                temperatureSlider.value = window[`currentTemperature_${shaderId}`] || 0.0;
-                temperatureValue.innerHTML = (window[`currentTemperature_${shaderId}`] * 100).toFixed(1) + "%";
+                for (const { name, value, defaultValue } of dynamic) {
+                    // TODO: add a reset button for each uniform checkdynamic for having default value
+                    const slider = document.getElementById(`slider-${shaderId}-${name}`);
+                    if (slider) {
+                        slider.disabled = false;
+                        slider.value = value;
+                        const valueEl = slider.nextElementSibling;
+                        if (valueEl) {
+                            valueEl.innerHTML = value.toFixed(1);
+                        }
+                        const resetBtn = valueEl.nextElementSibling;
+                        if (resetBtn) {
+                            resetBtn.disabled = value === defaultValue;
+                        }
+                    }
+                }
             }
         });
 
@@ -545,32 +436,44 @@ async function main(defaults) {
             chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 func: () => typeof VF_SHADERS !== 'undefined'
-            }).then((results) => {
-                // Only inject if shaders are not already present
-                if (!results[0].result) {
-                    return chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        files: ['shaders.js']
-                    });
-                }
-                return Promise.resolve();
+            }).then(() => {
+                // Get shader strings from storage.
+                return chrome.storage.sync.get(['defaults']);
+            }).then((data) => {
+                const shaderStrings = data.defaults.shader;
+                return chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: (shaderStrings) => {
+                        // Define shaders globally
+                        window.VF_SHADERS = shaderStrings;
+                    },
+                    args: [shaderStrings]
+                });
             }).then(() => {
                 // Check if shader is already active
                 chrome.scripting.executeScript({
                     target: { tabId: tab.id },
-                    func: (shaderId) => {
+                    func: (shaderId, uniforms) => {
                         const canvas = document.getElementById(shaderId);
+                        const dynamicUniforms = [];
+                        for (const [name, props] of Object.entries(uniforms)) {
+                            dynamicUniforms.push({
+                                name: name,
+                                value: window[`current${name}_${shaderId}`] || props.default,
+                                defaultValue: props.default,
+                            });
+                        }
                         if (canvas) {
                             return {
                                 isActive: true,
-                                sharpness: window[`currentSharpness_${shaderId}`] || 1.0
+                                dynamic: dynamicUniforms,
                             };
                         }
-                        return { isActive: false, sharpness: 1.0 };
+                        return { isActive: false, dynamic: dynamicUniforms };
                     },
-                    args: [shaderId]
+                    args: [shaderId, uniforms]
                 }).then((results) => {
-                    const { isActive, sharpness } = results[0].result;
+                    const { isActive, dynamic } = results[0].result;
                     if (isActive) {
                         // Remove shader
                         chrome.scripting.executeScript({
@@ -588,6 +491,10 @@ async function main(defaults) {
                                     });
                                     
                                     if (video) {
+                                        if (window[`renderCallback_${shaderId}`]) {
+                                            video.cancelVideoFrameCallback(window[`renderCallback_${shaderId}`]);
+                                            delete window[`renderCallback_${shaderId}`];
+                                        }
                                         // Store original opacity before making video transparent
                                         const originalOpacity = video.getAttribute('data-original-opacity');
                                         if (originalOpacity !== null) {
@@ -603,8 +510,6 @@ async function main(defaults) {
                                             filterObserver.disconnect();
                                             delete window[`filterObserver_${shaderId}`];
                                         }
-                                        
-                                        const videoStyle = getComputedStyle(video);
                                     }
                                     canvas.remove();
                                 }
@@ -612,14 +517,18 @@ async function main(defaults) {
                             args: [shaderId]
                         });
                         checkbox.checked = false;
-                        sharpnessDiv.style.display = "none";
-                        vignetteDiv.style.display = "none";
-                        temperatureDiv.style.display = "none";
+                        for (const { name, defaultValue } of dynamic) {
+                            const slider = document.getElementById(`slider-${shaderId}-${name}`);
+                            if (slider) {
+                                slider.disabled = true;
+                                slider.value = defaultValue;
+                            }
+                        }
                     } else {
                         // Add shader
                         chrome.scripting.executeScript({
                             target: { tabId: tab.id },
-                            func: (videoIndex, shaderId, initialSharpness) => {
+                            func: (videoIndex, shaderId, uniforms) => {
                                 // Find the video at the specified index
                                 const videos = VF_findVideos();
                                 if (videoIndex >= videos.length) {
@@ -636,7 +545,6 @@ async function main(defaults) {
                                 
                                 // Get video's computed style and position
                                 const videoStyle = getComputedStyle(video);
-                                const videoRect = video.getBoundingClientRect();
                                 
                                 // Handle z-index properly
                                 const videoZIndex = parseInt(videoStyle.zIndex) || 0;
@@ -696,7 +604,6 @@ async function main(defaults) {
                                 gl.compileShader(vertexShader);
                                 
                                 const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-                                // Use sharpen shader by default
                                 gl.shaderSource(fragmentShader, VF_SHADERS.fragment);
                                 gl.compileShader(fragmentShader);
                                 
@@ -756,11 +663,8 @@ async function main(defaults) {
                                 const positionLocation = gl.getAttribLocation(program, "a_position");
                                 const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
                                 const textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
-                                const sharpnessLocation = gl.getUniformLocation(program, "u_sharpness");
-                                const vignetteLocation = gl.getUniformLocation(program, "u_strength");
-                                const temperatureLocation = gl.getUniformLocation(program, "u_temperature");
                                 const textureLocation = gl.getUniformLocation(program, "u_texture");
-                                
+
                                 // Set up attributes
                                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                                 gl.enableVertexAttribArray(positionLocation);
@@ -769,25 +673,24 @@ async function main(defaults) {
                                 gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
                                 gl.enableVertexAttribArray(texCoordLocation);
                                 gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-                                
-                                // Set initial values
-                                gl.uniform1f(sharpnessLocation, initialSharpness);
-                                gl.uniform1f(vignetteLocation, 0.0);
-                                gl.uniform1f(temperatureLocation, 0.0);
-                                
-                                // Store the current values
-                                let currentSharpness = initialSharpness;
-                                let currentVignette = 0.0;
-                                let currentTemperature = 0.0;
-                                window[`currentSharpness_${shaderId}`] = currentSharpness;
-                                window[`currentVignette_${shaderId}`] = currentVignette;
-                                window[`currentTemperature_${shaderId}`] = currentTemperature;
-                                
+
+                                const dynamicLocations = {};
+                                for (const [name, props] of Object.entries(uniforms)) {
+                                    const location = gl.getUniformLocation(program, `${name}`);
+                                    if (location) {
+                                        dynamicLocations[name] = location;
+                                        gl.uniform1f(location, props.default);
+                                        window[`current${name}_${shaderId}`] = props.default;                                      
+                                    } else {
+                                        console.error(`Uniform ${name} not found. Something is wrong with the shader.`);
+                                    }
+                                }                                
+                                                                
                                 // Function to update canvas position
                                 const updateCanvasPosition = () => {
                                     const videoRect = video.getBoundingClientRect();
-                                    const scrollX = window.scrollX || window.pageXOffset;
-                                    const scrollY = window.scrollY || window.pageYOffset;
+                                    const scrollX = window.scrollX;
+                                    const scrollY = window.scrollY;
                                     
                                     // Set canvas position to match video exactly
                                     canvas.style.left = (videoRect.left + scrollX) + 'px';
@@ -800,69 +703,55 @@ async function main(defaults) {
                                     canvas.height = video.videoHeight;
                                     gl.viewport(0, 0, canvas.width, canvas.height);
                                 };
-                                
-                                // Update position immediately
                                 updateCanvasPosition();
                                 
                                 // Update canvas position on resize and scroll
                                 const resizeObserver = new ResizeObserver(updateCanvasPosition);
                                 resizeObserver.observe(video);
-                                
-                                // Add scroll listener to update position
                                 window.addEventListener('scroll', updateCanvasPosition, { passive: true });
                                 
                                 // Render loop
-                                function render() {
-                                    // Update texture with new video frame
+                                function render(forced) {
+                                    console.log("RENDER");
                                     gl.bindTexture(gl.TEXTURE_2D, texture);
                                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                                    
-                                    // Set the texture size
                                     gl.uniform2f(textureSizeLocation, video.videoWidth, video.videoHeight);
-                                    
-                                    // Set the texture uniform
                                     gl.uniform1i(textureLocation, 0);
+                                                                        
+                                    for (const [name, props] of Object.entries(uniforms)) {
+                                        if (props.type === 'float') {
+                                            gl.uniform1f(dynamicLocations[name], window[`current${name}_${shaderId}`]);
+                                        }
+                                    }
                                     
-                                    // Set the effect uniforms
-                                    gl.uniform1f(sharpnessLocation, currentSharpness);
-                                    gl.uniform1f(vignetteLocation, currentVignette);
-                                    gl.uniform1f(temperatureLocation, currentTemperature);
-                                    
-                                    // Clear and draw
                                     gl.viewport(0, 0, canvas.width, canvas.height);
                                     gl.clearColor(0, 0, 0, 0);
                                     gl.clear(gl.COLOR_BUFFER_BIT);
                                     gl.drawArrays(gl.TRIANGLES, 0, 6);
-                                    
-                                    // Continue loop
-                                    video.requestVideoFrameCallback(render);
+
+                                    if (!forced) window[`renderCallback_${shaderId}`] = video.requestVideoFrameCallback(()=>render(false));
                                 }
+                                render(false);
                                 
-                                // Start rendering
-                                render();
-                                
-                                // Store the update functions for later use
-                                window[`updateSharpness_${shaderId}`] = (value) => {
-                                    currentSharpness = value;
-                                    render();
-                                };
-                                
-                                window[`updateVignette_${shaderId}`] = (value) => {
-                                    currentVignette = value;
-                                    render();
-                                };
-                                
-                                window[`updateTemperature_${shaderId}`] = (value) => {
-                                    currentTemperature = value;
-                                    render();
-                                };
+                                for (const [name, props] of Object.entries(uniforms)) {
+                                    if (props.type === 'float') {
+                                        window[`update${name}_${shaderId}`] = (value) => {
+                                            window[`current${name}_${shaderId}`] = value;
+                                            render(true);
+                                        };
+                                    }
+                                }
                             },
-                            args: [video.localIndex, shaderId, parseFloat(sharpnessSlider.value)]
+                            args: [video.localIndex, shaderId, uniforms]
                         });
                         checkbox.checked = true;
-                        sharpnessDiv.style.display = "grid";
-                        vignetteDiv.style.display = "grid";
-                        temperatureDiv.style.display = "grid";
+
+                        for (const { name } of dynamic) {
+                            const slider = document.getElementById(`slider-${shaderId}-${name}`);
+                            if (slider) {
+                                slider.disabled = false;
+                            }
+                        }
                     }
                 });
             });
