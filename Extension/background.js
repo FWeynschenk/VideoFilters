@@ -129,9 +129,11 @@ const defaults = {
         float sides = u_sharpness;
         vec4 sharpened = sharpenCenter * color - sides * (colorLeft + colorRight + colorUp + colorDown);
 
-        // Apply chromatic aberration
+        // Apply chromatic aberration with adjusted response
         vec2 center = vec2(0.5, 0.5);
-        vec2 offset = (v_texCoord - center) * u_chromaticAberration * 0.1;
+        // Use a higher power to amplify the effect at the higher end
+        float logAberration = pow(u_chromaticAberration, 2.0) * 0.1; // Adjusted power
+        vec2 offset = (v_texCoord - center) * logAberration;
         
         vec4 chromaticColor;
         chromaticColor.r = texture2D(u_texture, v_texCoord + offset).r;
