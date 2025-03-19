@@ -3,11 +3,15 @@ Chrome extension for
 * manipulating style.filters on html5 video tags.
 * video playbackRate
 * Button per video for requesting Picture in Picture mode
+* Shader based Sharpness, Vignette, Temperature, Chromatic Aberration, Edge Detection
+* Custom shaders! See options page.
 
 ![image](https://github.com/FWeynschenk/VideoFilters/assets/33690654/de4767cf-17f1-4a7e-80c8-4b0a1833c0c9)
 
 
 ## Changelog
+### 1.4.0
+* Shaders!
 ### 1.3.1
 * add default browser controls to videos playing in document pip
 ### 1.3.0
