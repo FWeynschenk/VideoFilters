@@ -301,8 +301,9 @@ async function main(defaults) {
         checkbox.style.gridColumn = "4";
         const checkboxLabel = document.createElement("label");
         checkboxLabel.htmlFor = `${shaderId}-checkbox`;
-        checkboxLabel.textContent = "Enable Shaders";
+        checkboxLabel.textContent = "Shaders";
         checkboxLabel.style.gridColumn = "1 / span 2";
+        checkboxLabel.style.fontWeight = "500";
         checkboxDiv.appendChild(checkboxLabel);
         checkboxDiv.appendChild(checkbox);
         container.appendChild(checkboxDiv);
@@ -315,6 +316,7 @@ async function main(defaults) {
             label.innerHTML = props.label + ":";
             const valueEl = document.createElement("span");
             valueEl.innerHTML = props.default.toFixed(1);
+            valueEl.style.alignSelf = "center";
             const sliderEl = document.createElement("input");
             sliderEl.id = `slider-${shaderId}-${name}`;
             sliderEl.type = "range";
@@ -331,6 +333,7 @@ async function main(defaults) {
             const resetBtn = document.createElement("button");
             resetBtn.setAttribute("id", "resetBtn");
             resetBtn.disabled = true;
+            resetBtn.style.alignSelf = "center";
             resetBtn.addEventListener("click", () => {
                 sliderEl.value = props.default;
                 valueEl.innerHTML = props.default.toFixed(1);
@@ -403,7 +406,7 @@ async function main(defaults) {
             const { isActive, dynamic } = results[0].result;
             if (isActive) {
                 checkbox.checked = true;
-                opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 1; el.dispatchEvent(new Event('input'));});
+                opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 0; el.dispatchEvent(new Event('input')); el.parentNode.querySelector("button").disabled = true; });
                 
                 for (const { name, value, defaultValue } of dynamic) {
                     const slider = document.getElementById(`slider-${shaderId}-${name}`);
@@ -505,12 +508,13 @@ async function main(defaults) {
                             args: [shaderId]
                         });
                         checkbox.checked = false;
-                        opacitySettingEL.querySelectorAll("input").forEach(el => el.disabled = false);
+                        opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = false; el.value = 1; el.dispatchEvent(new Event('input'));});
                         for (const { name, defaultValue } of dynamic) {
                             const slider = document.getElementById(`slider-${shaderId}-${name}`);
                             if (slider) {
                                 slider.disabled = true;
                                 slider.value = defaultValue;
+                                slider.parentNode.querySelector("button").disabled = true;
                             }
                         }
                     } else {
@@ -532,17 +536,11 @@ async function main(defaults) {
                                 
                                 const videoStyle = getComputedStyle(video);
                                 
-                                const videoZIndex = parseInt(videoStyle.zIndex) || 0;
-                                const videoParentZIndex = parseInt(getComputedStyle(video.parentElement).zIndex) || 0;
-                                
-                                const canvasZIndex = Math.max(videoZIndex - 1, videoParentZIndex + 1);
-                                canvas.style.zIndex = canvasZIndex;
-                                
                                 canvas.style.position = 'absolute';
                                 
-                                canvas.style.filter = video.style.filter;
+                                canvas.style.filter = video.style.filter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
                                 
-                                document.body.appendChild(canvas);
+                                video.parentNode.insertBefore(canvas, video);
                                 
                                 video.style.position = videoStyle.position === 'static' ? 'relative' : videoStyle.position;
                                 
@@ -651,17 +649,43 @@ async function main(defaults) {
                                 }                                
                                                                 
                                 const updateCanvasPosition = () => {
+                                    canvas.style.zIndex = video.style.zIndex || 'auto';
+
                                     const videoRect = video.getBoundingClientRect();
-                                    const scrollX = window.scrollX;
-                                    const scrollY = window.scrollY;
                                     
-                                    canvas.style.left = (videoRect.left + scrollX) + 'px';
-                                    canvas.style.top = (videoRect.top + scrollY) + 'px';
-                                    canvas.style.width = videoRect.width + 'px';
-                                    canvas.style.height = videoRect.height + 'px';
+                                    const videoAspectRatio = video.videoWidth / video.videoHeight;
+                                    const screenAspectRatio = videoRect.width / videoRect.height;
+
+                                    if (screenAspectRatio > videoAspectRatio + 0.005) { // Wider screen: fit to height
+                                        canvas.style.height = videoRect.height + 'px';
+                                        canvas.style.width = (videoRect.height * videoAspectRatio) + 'px';
+                                        // Center horizontally
+                                        canvas.style.left = (videoRect.width - canvas.offsetWidth) / 2 + 'px';
+                                        canvas.style.top = video.style.top;
+                                        canvas.style.right = video.style.right;
+                                        canvas.style.bottom = video.style.bottom;
+                                    } else if (screenAspectRatio < videoAspectRatio - 0.005) { // Taller screen: fit to width
+                                        canvas.style.width = videoRect.width + 'px';
+                                        canvas.style.height = (videoRect.width / videoAspectRatio) + 'px';
+                                        // Center vertically
+                                        canvas.style.top = (videoRect.height - canvas.offsetHeight) / 2 + 'px';
+                                        canvas.style.left = video.style.left;
+                                        canvas.style.right = video.style.right;
+                                        canvas.style.bottom = video.style.bottom;
+                                    } else { // Square screen
+                                        canvas.style.width = videoRect.width + 'px';
+                                        canvas.style.height = videoRect.height + 'px';
+                                        canvas.style.left = video.style.left;
+                                        canvas.style.right = video.style.right;
+                                        canvas.style.top = video.style.top;
+                                        canvas.style.bottom = video.style.bottom;
+                                    }
+                                
+                                    canvas.style.zIndex = video.style.zIndex || 'auto';
                                     
                                     canvas.width = video.videoWidth;
                                     canvas.height = video.videoHeight;
+
                                     gl.viewport(0, 0, canvas.width, canvas.height);
                                 };
                                 updateCanvasPosition();
@@ -669,7 +693,9 @@ async function main(defaults) {
                                 const resizeObserver = new ResizeObserver(updateCanvasPosition);
                                 resizeObserver.observe(video);
                                 window.addEventListener('scroll', updateCanvasPosition, { passive: true });
+                                video.addEventListener('fullscreenchange', updateCanvasPosition, { passive: true });
                                 
+                                // TODO render every other frame option for performance
                                 function render(forced) {
                                     gl.bindTexture(gl.TEXTURE_2D, texture);
                                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
@@ -703,7 +729,7 @@ async function main(defaults) {
                             args: [video.localIndex, shaderId, uniforms]
                         });
                         checkbox.checked = true;
-                        opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 1; el.dispatchEvent(new Event('input'));});
+                        opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 0; el.dispatchEvent(new Event('input')); el.parentNode.querySelector("button").disabled = true;});
                         for (const { name } of dynamic) {
                             const slider = document.getElementById(`slider-${shaderId}-${name}`);
                             if (slider) {
