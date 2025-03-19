@@ -2,7 +2,6 @@
 *   MUST:
 *       ☺
 *   SHOULD:
-*       sort videos by offsetwidth
 *       replace await sleep with promisified structure
 *   COULD:
 *       indentify video on header:hover
@@ -82,7 +81,6 @@ async function main(defaults) {
         }
         vidQueue.sort((a, b) => a.width * a.height - b.width * b.height);
         const newVideo = vidQueue.pop();
-        console.log(newVideo.width, newVideo.height);
         const pf = parseFilter(newVideo.filter);
         const vidUID = `${newVideo.index}-${newVideo.uri}`
         vidMap[vidUID] = { localIndex: newVideo.index, pf: pf, playbackRate: newVideo.playbackRate, uri: newVideo.uri };
@@ -105,7 +103,7 @@ async function main(defaults) {
         addFilterElement(videoEl, vidUID, pf, "Saturation:", "saturate");
         addFilterElement(videoEl, vidUID, pf, "Invert:", "invert");
         addFilterElement(videoEl, vidUID, pf, "Sepia:", "sepia");
-        addFilterElement(videoEl, vidUID, pf, "Opacity:", "opacity");
+        opacitySettingEL = addFilterElement(videoEl, vidUID, pf, "Opacity:", "opacity");
         addFilterElement(videoEl, vidUID, pf, "Grayscale:", "grayscale");
         addFilterElement(videoEl, vidUID, pf, "Hue:", "hueRotate", (val) => `${val} deg`);
         addFilterElement(videoEl, vidUID, pf, "Blur:", "blur", (val) => `${val} px`);
@@ -114,7 +112,7 @@ async function main(defaults) {
 
         addPresetSelector(videoEl, vidUID);
 
-        addShaderElements(vidMap[vidUID], videoEl);
+        addShaderElements(vidMap[vidUID], videoEl, opacitySettingEL);
 
         addVideoRunning = false;
         if (vidQueue.length > 0) addVideoRunner();
@@ -248,6 +246,7 @@ async function main(defaults) {
         });
         filterDiv.appendChild(resetEl);
         videoEl.appendChild(filterDiv);
+        return filterDiv;
     }
 
     function addPlaybackRateElement(videoEl, vidUID) {
@@ -291,7 +290,7 @@ async function main(defaults) {
         videoEl.appendChild(playbackRateDiv);
     }
 
-    function addShaderElements(video, container) {
+    function addShaderElements(video, container, opacitySettingEL) {
         const shaderId = `vf-shader-${video.localIndex}-${video.uri}`;
         
         const checkboxDiv = document.createElement("div");
@@ -313,7 +312,7 @@ async function main(defaults) {
         for (const [name, props] of Object.entries(uniforms)) {
             const controlDiv = document.createElement("div");
             const label = document.createElement("label");
-            label.innerHTML = props.label + ";";
+            label.innerHTML = props.label + ":";
             const valueEl = document.createElement("span");
             valueEl.innerHTML = props.default.toFixed(1);
             const sliderEl = document.createElement("input");
@@ -376,7 +375,6 @@ async function main(defaults) {
             container.appendChild(controlDiv);
         }
 
-
         // Check if shader is already active for this video
         chrome.scripting.executeScript({
             target: { tabId: tab.id },
@@ -405,8 +403,9 @@ async function main(defaults) {
             const { isActive, dynamic } = results[0].result;
             if (isActive) {
                 checkbox.checked = true;
+                opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 1; el.dispatchEvent(new Event('input'));});
+                
                 for (const { name, value, defaultValue } of dynamic) {
-                    // TODO: add a reset button for each uniform checkdynamic for having default value
                     const slider = document.getElementById(`slider-${shaderId}-${name}`);
                     if (slider) {
                         slider.disabled = false;
@@ -506,6 +505,7 @@ async function main(defaults) {
                             args: [shaderId]
                         });
                         checkbox.checked = false;
+                        opacitySettingEL.querySelectorAll("input").forEach(el => el.disabled = false);
                         for (const { name, defaultValue } of dynamic) {
                             const slider = document.getElementById(`slider-${shaderId}-${name}`);
                             if (slider) {
@@ -544,16 +544,13 @@ async function main(defaults) {
                                 
                                 document.body.appendChild(canvas);
                                 
-                                const originalOpacity = video.style.opacity;
-                                video.setAttribute('data-original-opacity', originalOpacity);
-                                video.style.opacity = '0';
-                                
                                 video.style.position = videoStyle.position === 'static' ? 'relative' : videoStyle.position;
                                 
                                 const filterObserver = new MutationObserver((mutations) => {
                                     mutations.forEach((mutation) => {
                                         if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-                                            const newFilter = video.style.filter;
+                                            let newFilter = video.style.filter;
+                                            newFilter = newFilter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
                                             canvas.style.filter = newFilter;
                                         }
                                     });
@@ -674,7 +671,6 @@ async function main(defaults) {
                                 window.addEventListener('scroll', updateCanvasPosition, { passive: true });
                                 
                                 function render(forced) {
-                                    console.log("RENDER");
                                     gl.bindTexture(gl.TEXTURE_2D, texture);
                                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
                                     gl.uniform2f(textureSizeLocation, video.videoWidth, video.videoHeight);
@@ -707,7 +703,7 @@ async function main(defaults) {
                             args: [video.localIndex, shaderId, uniforms]
                         });
                         checkbox.checked = true;
-
+                        opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 1; el.dispatchEvent(new Event('input'));});
                         for (const { name } of dynamic) {
                             const slider = document.getElementById(`slider-${shaderId}-${name}`);
                             if (slider) {
@@ -848,7 +844,6 @@ async function main(defaults) {
     }
 
     function parseFilter(fltr) {
-        // TODO replace regex with a proper parser?
         //  feature = (regex between the parentheses || [0, default]) [capture group]
         let blur = (fltr.match(/blur\((.*?)\)/m) || [0, "0"])[1];
         let brightness = (fltr.match(/brightness\((.*?)\)/m) || [0, "1"])[1];
