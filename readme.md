@@ -4,7 +4,11 @@ Chrome extension for
 * video playbackRate
 * Button per video for requesting Picture in Picture mode
 * Shader based Sharpness, Vignette, Temperature, Chromatic Aberration, Edge Detection
-* Custom shaders! See options page.
+    * shaders work by placing a canvas under the \<video> and setting the video's opacity to 0. 
+    * do not yet work with advanced pip mode
+    * can not work with drm content such as Netflix
+    * WebGl shader fragment is customizable from the options page! Anything is possible.
+
 
 ![image](https://github.com/FWeynschenk/VideoFilters/assets/33690654/de4767cf-17f1-4a7e-80c8-4b0a1833c0c9)
 
