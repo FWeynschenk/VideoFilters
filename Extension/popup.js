@@ -14,17 +14,27 @@ async function main(defaults) {
     const videosListEl = document.getElementById("videosList");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: true },
-        func: () => typeof VF_findVideos !== 'undefined'
-    }).then((results) => {
-        if (!results[0].result) {
-            chrome.scripting.executeScript({
+    async function checkAndInjectShared(tab) {
+        try {
+            const results = await chrome.scripting.executeScript({
                 target: { tabId: tab.id, allFrames: true },
-                files: ['shared.js'],
-            }, _ => !chrome.runtime.lastError || console.log("Error(injectShared): ", chrome.runtime.lastError));
+                func: () => typeof VF_findVideos !== 'undefined'
+            });
+            if (!results[0].result) {
+                try {
+                    await chrome.scripting.executeScript({
+                        target: { tabId: tab.id, allFrames: true },
+                        files: ['shared.js'],
+                    });
+                } catch (error) {
+                    console.error("Error(injectShared): ", error);
+                }
+            }
+        } catch (error) {
+            console.error("Error during script execution:", error);
         }
-    });
+    }
+    await checkAndInjectShared(tab);
 
     const vidMap = {}; // index: { localindex, parsedFilter, playbackRate, windowUri }
     const videoList = []; // accumulator for videos from all frames
@@ -51,12 +61,7 @@ async function main(defaults) {
             function mapVid(vid, index) {
                 return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href, width: vid.videoWidth, height: vid.videoHeight };
             }
-            let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
-            for (const { shadowRoot } of document.querySelectorAll("*")) {
-                if (shadowRoot) {
-                    nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
-                }
-            }
+            let nodes = VF_findVideos();
             const vids = nodes.map(mapVid);
             for (const vid of nodes) {
                 vid.disablePictureInPicture = false;
@@ -112,7 +117,7 @@ async function main(defaults) {
 
         addPresetSelector(videoEl, vidUID);
 
-        addShaderElements(vidMap[vidUID], videoEl, opacitySettingEL);
+        addShaderElements(vidUID, videoEl, opacitySettingEL);
 
         addVideoRunning = false;
         if (vidQueue.length > 0) addVideoRunner();
@@ -290,8 +295,8 @@ async function main(defaults) {
         videoEl.appendChild(playbackRateDiv);
     }
 
-    function addShaderElements(video, container, opacitySettingEL) {
-        const shaderId = `vf-shader-${video.localIndex}-${video.uri}`;
+    function addShaderElements(vidUID, container, opacitySettingEL) {
+        const shaderId = `vf-shader-${vidMap[vidUID].localIndex}-${vidMap[vidUID].uri}`;
         
         const checkboxDiv = document.createElement("div");
         checkboxDiv.style.paddingTop = "10px";
@@ -340,14 +345,19 @@ async function main(defaults) {
                 resetBtn.disabled = true;
                 
                 if (checkbox.checked) {
+                    chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                    chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
                     chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
+                        target: { tabId: tab.id, allFrames: true },
                         func: (shaderId, value, name) => {
-                            const updateUniform = window[`update${name}_${shaderId}`];
-                            if (updateUniform) {
-                                updateUniform(value);
-                                window[`current${name}_${shaderId}`] = value;
-                            }
+                            chrome.storage.local.get("frameUri", (data) => {
+                                if (window.location.href !== data.frameUri) return;
+                                const updateUniform = window[`update${name}_${shaderId}`];
+                                if (updateUniform) {
+                                    updateUniform(value);
+                                    window[`current${name}_${shaderId}`] = value;
+                                }
+                            });
                         },
                         args: [shaderId, props.default, name]
                     });
@@ -360,14 +370,19 @@ async function main(defaults) {
                 resetBtn.disabled = value === props.default;
                 
                 if (checkbox.checked) {
+                    chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                    chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
                     chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
+                        target: { tabId: tab.id, allFrames: true },
                         func: (shaderId, value, name) => {
-                            const updateUniform = window[`update${name}_${shaderId}`];
-                            if (updateUniform) {
-                                updateUniform(value);
-                                window[`current${name}_${shaderId}`] = value;
-                            }
+                            chrome.storage.local.get("frameUri", (data) => {
+                                if (window.location.href !== data.frameUri) return;
+                                const updateUniform = window[`update${name}_${shaderId}`];
+                                if (updateUniform) {
+                                    updateUniform(value);
+                                    window[`current${name}_${shaderId}`] = value;
+                                }
+                            });
                         },
                         args: [shaderId, value, name]
                     });
@@ -379,9 +394,13 @@ async function main(defaults) {
         }
 
         // Check if shader is already active for this video
+        chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+        chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
         chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: (shaderId, uniforms) => {
+            target: { tabId: tab.id, allFrames: true },
+            func: async (shaderId, uniforms) => {
+                const data = await chrome.storage.local.get("frameUri");
+                if (window.location.href !== data.frameUri) return { ignore: true, isActive: false, dynamic: [] };
                 const canvas = document.getElementById(shaderId);
                 const dynamicUniforms = [];
                 for (const [name, props] of Object.entries(uniforms)) {
@@ -393,16 +412,17 @@ async function main(defaults) {
                 }
                 if (canvas) {
                     const currentUniforms = {
+                        ignore: false,
                         isActive: true,
                         dynamic: dynamicUniforms,
                     };
-                    
                     return currentUniforms;
                 }
-                return { isActive: false, dynamic: dynamicUniforms };
+                return { ignore: false, isActive: false, dynamic: dynamicUniforms };
             },
             args: [shaderId, uniforms]
         }).then((results) => {
+            results = results.filter(r => !r.result.ignore);
             const { isActive, dynamic } = results[0].result;
             if (isActive) {
                 checkbox.checked = true;
@@ -428,25 +448,41 @@ async function main(defaults) {
 
         checkbox.onchange = () => {
             // Check if shaders are already injected
+            chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+            chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
             chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: () => typeof VF_SHADERS !== 'undefined'
+                target: { tabId: tab.id, allFrames: true },
+                func: () => {
+                    chrome.storage.local.get("frameUri", (data) => {
+                        if (window.location.href !== data.frameUri) return;
+                        return typeof VF_SHADERS !== 'undefined'
+                    });
+                }
             }).then(() => {
                 return chrome.storage.sync.get(['defaults']);
             }).then((data) => {
                 const shaderStrings = data.defaults.shader;
+                chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
                 return chrome.scripting.executeScript({
                     target: { tabId: tab.id },
                     func: (shaderStrings) => {
-                        window.VF_SHADERS = shaderStrings;
+                        chrome.storage.local.get("frameUri", (data) => {
+                            if (window.location.href !== data.frameUri) return;
+                            window.VF_SHADERS = shaderStrings;
+                        });
                     },
                     args: [shaderStrings]
                 });
             }).then(() => {
                 // Check if shader is already active
+                chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
                 chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: (shaderId, uniforms) => {
+                    target: { tabId: tab.id, allFrames: true },
+                    func: async (shaderId, uniforms) => {
+                        const data = await chrome.storage.local.get("frameUri");
+                        if (window.location.href !== data.frameUri) return { ignore: true, isActive: false, dynamic: [] };
                         const canvas = document.getElementById(shaderId);
                         const dynamicUniforms = [];
                         for (const [name, props] of Object.entries(uniforms)) {
@@ -458,52 +494,59 @@ async function main(defaults) {
                         }
                         if (canvas) {
                             return {
+                                ignore: false,
                                 isActive: true,
                                 dynamic: dynamicUniforms,
                             };
                         }
-                        return { isActive: false, dynamic: dynamicUniforms };
+                        return { ignore: false, isActive: false, dynamic: dynamicUniforms };
                     },
                     args: [shaderId, uniforms]
                 }).then((results) => {
+                    results = results.filter(r => !r.result.ignore);
                     const { isActive, dynamic } = results[0].result;
                     if (isActive) {
                         // Remove shader
+                        chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                        chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
                         chrome.scripting.executeScript({
-                            target: { tabId: tab.id },
+                            target: { tabId: tab.id, allFrames: true },
                             func: (shaderId) => {
-                                const canvas = document.getElementById(shaderId);
-                                if (canvas) {
-                                    // Find the video by matching the canvas position with video position
-                                    const videos = VF_findVideos();
-                                    const video = videos.find(v => {
+                                chrome.storage.local.get("frameUri", (data) => {
+                                    if (window.location.href !== data.frameUri) return;
+                                    const canvas = document.getElementById(shaderId);
+                                    if (canvas) {
+                                        // Find the video by matching the canvas position with video position
+                                        const videos = VF_findVideos();
+                                        const video = videos.find(v => {
                                         const vRect = v.getBoundingClientRect();
                                         const cRect = canvas.getBoundingClientRect();
                                         return Math.abs(vRect.left - cRect.left) < 1 && 
                                                Math.abs(vRect.top - cRect.top) < 1;
-                                    });
+                                        });
                                     
-                                    if (video) {
-                                        if (window[`renderCallback_${shaderId}`]) {
-                                            video.cancelVideoFrameCallback(window[`renderCallback_${shaderId}`]);
-                                            delete window[`renderCallback_${shaderId}`];
+                                        if (video) {
+                                            if (window[`renderCallback_${shaderId}`]) {
+                                                video.cancelVideoFrameCallback(window[`renderCallback_${shaderId}`]);
+                                                delete window[`renderCallback_${shaderId}`];
+                                            }
+                                            const originalOpacity = video.getAttribute('data-original-opacity');
+                                            if (originalOpacity !== null) {
+                                                video.style.opacity = originalOpacity;
+                                                video.removeAttribute('data-original-opacity');
+                                            } else {
+                                                video.style.opacity = '1';
+                                            }
+
+                                            const filterObserver = window[`filterObserver_${shaderId}`];
+                                            if (filterObserver) {
+                                                filterObserver.disconnect();
+                                                delete window[`filterObserver_${shaderId}`];
+                                            }
                                         }
-                                        const originalOpacity = video.getAttribute('data-original-opacity');
-                                        if (originalOpacity !== null) {
-                                            video.style.opacity = originalOpacity;
-                                            video.removeAttribute('data-original-opacity');
-                                        } else {
-                                            video.style.opacity = '1';
-                                        }
-                                        
-                                        const filterObserver = window[`filterObserver_${shaderId}`];
-                                        if (filterObserver) {
-                                            filterObserver.disconnect();
-                                            delete window[`filterObserver_${shaderId}`];
-                                        }
+                                        canvas.remove();
                                     }
-                                    canvas.remove();
-                                }
+                                });
                             },
                             args: [shaderId]
                         });
@@ -519,214 +562,200 @@ async function main(defaults) {
                         }
                     } else {
                         // Add shader
+                        chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                        chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
                         chrome.scripting.executeScript({
                             target: { tabId: tab.id },
                             func: (videoIndex, shaderId, uniforms) => {
-                                const videos = VF_findVideos();
-                                if (videoIndex >= videos.length) {
-                                    console.error('Video index out of range');
-                                    return;
-                                }
-                                const video = videos[videoIndex];
-                                
-                                const canvas = document.createElement('canvas');
-                                canvas.id = shaderId;
-                                canvas.width = video.videoWidth;
-                                canvas.height = video.videoHeight;
-                                
-                                const videoStyle = getComputedStyle(video);
-                                
-                                canvas.style.position = 'absolute';
-                                
-                                canvas.style.filter = video.style.filter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
-                                
-                                video.parentNode.insertBefore(canvas, video);
-                                
-                                video.style.position = videoStyle.position === 'static' ? 'relative' : videoStyle.position;
-                                
-                                const filterObserver = new MutationObserver((mutations) => {
-                                    mutations.forEach((mutation) => {
-                                        if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-                                            let newFilter = video.style.filter;
-                                            newFilter = newFilter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
-                                            canvas.style.filter = newFilter;
-                                        }
-                                    });
-                                });
-                                
-                                filterObserver.observe(video, {
-                                    attributes: true,
-                                    attributeFilter: ['style']
-                                });
-                                
-                                window[`filterObserver_${shaderId}`] = filterObserver;
-                                
-                                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                                if (!gl) {
-                                    console.error('WebGL not supported');
-                                    return;
-                                }
-                                
-                                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-                                gl.shaderSource(vertexShader, VF_SHADERS.vertex);
-                                gl.compileShader(vertexShader);
-                                
-                                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-                                gl.shaderSource(fragmentShader, VF_SHADERS.fragment);
-                                gl.compileShader(fragmentShader);
-                                
-                                const program = gl.createProgram();
-                                gl.attachShader(program, vertexShader);
-                                gl.attachShader(program, fragmentShader);
-                                gl.linkProgram(program);
-                                gl.useProgram(program);
-                                
-                                if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
-                                    console.error('Vertex shader compilation failed:', gl.getShaderInfoLog(vertexShader));
-                                    return;
-                                }
-                                if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-                                    console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader));
-                                    return;
-                                }
-                                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                                    console.error('Shader program linking failed:', gl.getProgramInfoLog(program));
-                                    return;
-                                }
-                                
-                                const positionBuffer = gl.createBuffer();
-                                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-                                    -1.0, -1.0,
-                                    1.0, -1.0,
-                                    -1.0,  1.0,
-                                    -1.0,  1.0,
-                                    1.0, -1.0,
-                                    1.0,  1.0
-                                ]), gl.STATIC_DRAW);
-                                
-                                const texCoordBuffer = gl.createBuffer();
-                                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-                                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-                                    0.0, 1.0,
-                                    1.0, 1.0,
-                                    0.0, 0.0,
-                                    0.0, 0.0,
-                                    1.0, 1.0,
-                                    1.0, 0.0 
-                                ]), gl.STATIC_DRAW);
-                                
-                                const texture = gl.createTexture();
-                                gl.bindTexture(gl.TEXTURE_2D, texture);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                                
-                                const positionLocation = gl.getAttribLocation(program, "a_position");
-                                const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
-                                const textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
-                                const textureLocation = gl.getUniformLocation(program, "u_texture");
-
-                                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                                gl.enableVertexAttribArray(positionLocation);
-                                gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-                                
-                                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-                                gl.enableVertexAttribArray(texCoordLocation);
-                                gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-                                const dynamicLocations = {};
-                                for (const [name, props] of Object.entries(uniforms)) {
-                                    const location = gl.getUniformLocation(program, `${name}`);
-                                    if (location) {
-                                        dynamicLocations[name] = location;
-                                        gl.uniform1f(location, props.default);
-                                        window[`current${name}_${shaderId}`] = props.default;                                      
-                                    } else {
-                                        console.error(`Uniform ${name} not found. Something is wrong with the shader.`);
+                                chrome.storage.local.get("frameUri", (data) => {
+                                    if (window.location.href !== data.frameUri) return;
+                                    const videos = VF_findVideos();
+                                    if (videoIndex >= videos.length) {
+                                        console.error('Video index out of range');
+                                        console.error(videoIndex, videos.length);
+                                        console.error(videos);
+                                        return;
                                     }
-                                }                                
-                                                                
-                                const updateCanvasPosition = () => {
-                                    canvas.style.zIndex = video.style.zIndex || 'auto';
+                                    const video = videos[videoIndex];
 
-                                    const videoRect = video.getBoundingClientRect();
-                                    
-                                    const videoAspectRatio = video.videoWidth / video.videoHeight;
-                                    const screenAspectRatio = videoRect.width / videoRect.height;
-
-                                    if (screenAspectRatio > videoAspectRatio + 0.005) { // Wider screen: fit to height
-                                        canvas.style.height = videoRect.height + 'px';
-                                        canvas.style.width = (videoRect.height * videoAspectRatio) + 'px';
-                                        // Center horizontally
-                                        canvas.style.left = (videoRect.width - canvas.offsetWidth) / 2 + 'px';
-                                        canvas.style.top = video.style.top;
-                                        canvas.style.right = video.style.right;
-                                        canvas.style.bottom = video.style.bottom;
-                                    } else if (screenAspectRatio < videoAspectRatio - 0.005) { // Taller screen: fit to width
-                                        canvas.style.width = videoRect.width + 'px';
-                                        canvas.style.height = (videoRect.width / videoAspectRatio) + 'px';
-                                        // Center vertically
-                                        canvas.style.top = (videoRect.height - canvas.offsetHeight) / 2 + 'px';
-                                        canvas.style.left = video.style.left;
-                                        canvas.style.right = video.style.right;
-                                        canvas.style.bottom = video.style.bottom;
-                                    } else { // Square screen
-                                        canvas.style.width = videoRect.width + 'px';
-                                        canvas.style.height = videoRect.height + 'px';
-                                        canvas.style.left = video.style.left;
-                                        canvas.style.right = video.style.right;
-                                        canvas.style.top = video.style.top;
-                                        canvas.style.bottom = video.style.bottom;
-                                    }
-                                
-                                    canvas.style.zIndex = video.style.zIndex || 'auto';
-                                    
+                                    const canvas = document.createElement('canvas');
+                                    canvas.id = shaderId;
                                     canvas.width = video.videoWidth;
                                     canvas.height = video.videoHeight;
 
-                                    gl.viewport(0, 0, canvas.width, canvas.height);
-                                };
-                                updateCanvasPosition();
-                                
-                                const resizeObserver = new ResizeObserver(updateCanvasPosition);
-                                resizeObserver.observe(video);
-                                window.addEventListener('scroll', updateCanvasPosition, { passive: true });
-                                video.addEventListener('fullscreenchange', updateCanvasPosition, { passive: true });
-                                
-                                // TODO render every other frame option for performance
-                                function render(forced) {
+                                    const videoStyle = getComputedStyle(video);
+
+                                    canvas.style.position = 'absolute';
+
+                                    canvas.style.filter = video.style.filter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
+
+                                    video.parentNode.insertBefore(canvas, video);
+
+                                    video.style.position = videoStyle.position === 'static' ? 'relative' : videoStyle.position;
+
+                                    const filterObserver = new MutationObserver((mutations) => {
+                                        mutations.forEach((mutation) => {
+                                            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                                                let newFilter = video.style.filter;
+                                                newFilter = newFilter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
+                                                canvas.style.filter = newFilter;
+                                            }
+                                        });
+                                    });
+
+                                    filterObserver.observe(video, {
+                                        attributes: true,
+                                        attributeFilter: ['style']
+                                    });
+
+                                    window[`filterObserver_${shaderId}`] = filterObserver;
+
+                                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                                    if (!gl) {
+                                        console.error('WebGL not supported');
+                                        return;
+                                    }
+
+                                    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                                    gl.shaderSource(vertexShader, VF_SHADERS.vertex);
+                                    gl.compileShader(vertexShader);
+
+                                    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                                    gl.shaderSource(fragmentShader, VF_SHADERS.fragment);
+                                    gl.compileShader(fragmentShader);
+
+                                    const program = gl.createProgram();
+                                    gl.attachShader(program, vertexShader);
+                                    gl.attachShader(program, fragmentShader);
+                                    gl.linkProgram(program);
+                                    gl.useProgram(program);
+
+                                    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+                                        console.error('Vertex shader compilation failed:', gl.getShaderInfoLog(vertexShader));
+                                        return;
+                                    }
+                                    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+                                        console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader));
+                                        return;
+                                    }
+                                    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                                        console.error('Shader program linking failed:', gl.getProgramInfoLog(program));
+                                        return;
+                                    }
+
+                                    const positionBuffer = gl.createBuffer();
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                                        -1.0, -1.0,
+                                        1.0, -1.0,
+                                        -1.0,  1.0,
+                                        -1.0,  1.0,
+                                        1.0, -1.0,
+                                        1.0,  1.0
+                                    ]), gl.STATIC_DRAW);
+
+                                    const texCoordBuffer = gl.createBuffer();
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                                        0.0, 1.0,
+                                        1.0, 1.0,
+                                        0.0, 0.0,
+                                        0.0, 0.0,
+                                        1.0, 1.0,
+                                        1.0, 0.0 
+                                    ]), gl.STATIC_DRAW);
+
+                                    const texture = gl.createTexture();
                                     gl.bindTexture(gl.TEXTURE_2D, texture);
-                                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                                    gl.uniform2f(textureSizeLocation, video.videoWidth, video.videoHeight);
-                                    gl.uniform1i(textureLocation, 0);
-                                                                        
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+                                    const positionLocation = gl.getAttribLocation(program, "a_position");
+                                    const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+                                    const textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
+                                    const textureLocation = gl.getUniformLocation(program, "u_texture");
+
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                                    gl.enableVertexAttribArray(positionLocation);
+                                    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                                    gl.enableVertexAttribArray(texCoordLocation);
+                                    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+                                    const dynamicLocations = {};
+                                    for (const [name, props] of Object.entries(uniforms)) {
+                                        const location = gl.getUniformLocation(program, `${name}`);
+                                        if (location) {
+                                            dynamicLocations[name] = location;
+                                            gl.uniform1f(location, props.default);
+                                            window[`current${name}_${shaderId}`] = props.default;                                      
+                                        } else {
+                                            console.error(`Uniform ${name} not found. Something is wrong with the shader.`);
+                                        }
+                                    }                                
+
+                                    const updateCanvasPosition = () => {
+                                        const videoRect = video.getBoundingClientRect();
+                                        const videoStyle = getComputedStyle(video);
+                                        
+                                        canvas.style.zIndex = videoStyle.zIndex || 'auto';
+
+                                        canvas.style.width = videoRect.width + 'px';
+                                        canvas.style.height = videoRect.height + 'px';
+                                        canvas.style.left = videoStyle.left;
+                                        canvas.style.right = videoStyle.right;
+                                        canvas.style.top = videoStyle.top;
+                                        canvas.style.bottom = videoStyle.bottom;
+                                        canvas.style.transform = videoStyle.transform;
+                                    
+                                        canvas.width = video.videoWidth;
+                                        canvas.height = video.videoHeight;
+
+                                        gl.viewport(0, 0, canvas.width, canvas.height);
+                                    };
+                                    updateCanvasPosition();
+
+                                    const resizeObserver = new ResizeObserver(updateCanvasPosition);
+                                    resizeObserver.observe(video);
+                                    window.addEventListener('scroll', updateCanvasPosition, { passive: true });
+                                    video.addEventListener('fullscreenchange', updateCanvasPosition, { passive: true });
+
+                                    // TODO render every other frame option for performance
+                                    function render(forced) {
+                                        gl.bindTexture(gl.TEXTURE_2D, texture);
+                                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                                        gl.uniform2f(textureSizeLocation, video.videoWidth, video.videoHeight);
+                                        gl.uniform1i(textureLocation, 0);
+
+                                        for (const [name, props] of Object.entries(uniforms)) {
+                                            if (props.type === 'float') {
+                                                gl.uniform1f(dynamicLocations[name], window[`current${name}_${shaderId}`]);
+                                            }
+                                        }
+
+                                        gl.viewport(0, 0, canvas.width, canvas.height);
+                                        gl.clearColor(0, 0, 0, 0);
+                                        gl.clear(gl.COLOR_BUFFER_BIT);
+                                        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                                        if (!forced) window[`renderCallback_${shaderId}`] = video.requestVideoFrameCallback(()=>render(false));
+                                    }
+                                    render(false);
+
                                     for (const [name, props] of Object.entries(uniforms)) {
                                         if (props.type === 'float') {
-                                            gl.uniform1f(dynamicLocations[name], window[`current${name}_${shaderId}`]);
+                                            window[`update${name}_${shaderId}`] = (value) => {
+                                                window[`current${name}_${shaderId}`] = value;
+                                                render(true);
+                                            };
                                         }
                                     }
-                                    
-                                    gl.viewport(0, 0, canvas.width, canvas.height);
-                                    gl.clearColor(0, 0, 0, 0);
-                                    gl.clear(gl.COLOR_BUFFER_BIT);
-                                    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-                                    if (!forced) window[`renderCallback_${shaderId}`] = video.requestVideoFrameCallback(()=>render(false));
-                                }
-                                render(false);
-                                
-                                for (const [name, props] of Object.entries(uniforms)) {
-                                    if (props.type === 'float') {
-                                        window[`update${name}_${shaderId}`] = (value) => {
-                                            window[`current${name}_${shaderId}`] = value;
-                                            render(true);
-                                        };
-                                    }
-                                }
+                                });
                             },
-                            args: [video.localIndex, shaderId, uniforms]
+                            args: [vidMap[vidUID].localIndex, shaderId, uniforms]
                         });
                         checkbox.checked = true;
                         opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 0; el.dispatchEvent(new Event('input')); el.parentNode.querySelector("button").disabled = true;});
@@ -926,7 +955,6 @@ chrome.storage.sync.get("advancedPIPEnabled", enabled => {
     const toggle = document.getElementById("advancedPIP");
     if (enabled.advancedPIPEnabled) toggle.checked = true;
     toggle.addEventListener("change", () => {
-        console.log(toggle.checked);
         chrome.storage.sync.set({ "advancedPIPEnabled": toggle.checked });
     });
 });
