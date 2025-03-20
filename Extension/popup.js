@@ -2,7 +2,6 @@
 *   MUST:
 *       ☺
 *   SHOULD:
-*       sort videos by offsetwidth
 *       replace await sleep with promisified structure
 *   COULD:
 *       indentify video on header:hover
@@ -14,6 +13,28 @@
 async function main(defaults) {
     const videosListEl = document.getElementById("videosList");
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    async function checkAndInjectShared(tab) {
+        try {
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => typeof VF_findVideos !== 'undefined'
+            });
+            if (!results[0].result) {
+                try {
+                    await chrome.scripting.executeScript({
+                        target: { tabId: tab.id, allFrames: true },
+                        files: ['shared.js'],
+                    });
+                } catch (error) {
+                    console.error("Error(injectShared): ", error);
+                }
+            }
+        } catch (error) {
+            console.error("Error during script execution:", error);
+        }
+    }
+    await checkAndInjectShared(tab);
 
     const vidMap = {}; // index: { localindex, parsedFilter, playbackRate, windowUri }
     const videoList = []; // accumulator for videos from all frames
@@ -38,14 +59,9 @@ async function main(defaults) {
         target: { tabId: tab.id, allFrames: true },
         function: () => {
             function mapVid(vid, index) {
-                return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href };
+                return { index: index, filter: vid.style.filter, playbackRate: vid.playbackRate, uri: window.location.href, width: vid.videoWidth, height: vid.videoHeight };
             }
-            let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
-            for (const { shadowRoot } of document.querySelectorAll("*")) {
-                if (shadowRoot) {
-                    nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
-                }
-            }
+            let nodes = VF_findVideos();
             const vids = nodes.map(mapVid);
             for (const vid of nodes) {
                 vid.disablePictureInPicture = false;
@@ -54,7 +70,6 @@ async function main(defaults) {
         },
     }, _ => !chrome.runtime.lastError || console.log("Error(getVids):", chrome.runtime.lastError));
 
-    // give it time to find videos before telling user there aren't any
     await sleep(1000).then(() => {
         if (videoList.length === 0) {
             videosListEl.classList.add("noVidsFound");
@@ -69,6 +84,7 @@ async function main(defaults) {
             videosListEl.innerHTML = "";
             videosListEl.classList.remove("noVidsFound");
         }
+        vidQueue.sort((a, b) => a.width * a.height - b.width * b.height);
         const newVideo = vidQueue.pop();
         const pf = parseFilter(newVideo.filter);
         const vidUID = `${newVideo.index}-${newVideo.uri}`
@@ -92,7 +108,7 @@ async function main(defaults) {
         addFilterElement(videoEl, vidUID, pf, "Saturation:", "saturate");
         addFilterElement(videoEl, vidUID, pf, "Invert:", "invert");
         addFilterElement(videoEl, vidUID, pf, "Sepia:", "sepia");
-        addFilterElement(videoEl, vidUID, pf, "Opacity:", "opacity");
+        opacitySettingEL = addFilterElement(videoEl, vidUID, pf, "Opacity:", "opacity");
         addFilterElement(videoEl, vidUID, pf, "Grayscale:", "grayscale");
         addFilterElement(videoEl, vidUID, pf, "Hue:", "hueRotate", (val) => `${val} deg`);
         addFilterElement(videoEl, vidUID, pf, "Blur:", "blur", (val) => `${val} px`);
@@ -100,6 +116,8 @@ async function main(defaults) {
         addPlaybackRateElement(videoEl, vidUID);
 
         addPresetSelector(videoEl, vidUID);
+
+        addShaderElements(vidUID, videoEl, opacitySettingEL);
 
         addVideoRunning = false;
         if (vidQueue.length > 0) addVideoRunner();
@@ -233,10 +251,10 @@ async function main(defaults) {
         });
         filterDiv.appendChild(resetEl);
         videoEl.appendChild(filterDiv);
+        return filterDiv;
     }
 
     function addPlaybackRateElement(videoEl, vidUID) {
-        //playback rate
         const playbackRateDiv = document.createElement("div");
         const playbackRateLabel = document.createElement("label");
         playbackRateLabel.innerHTML = "Speed:";
@@ -262,7 +280,6 @@ async function main(defaults) {
             setPlaybackRate(vidMap[vidUID]);
         });
         playbackRateSlider.addEventListener("input", () => {
-            //set playbackRate val and update playbackRate
             playbackRateMultiplier.innerHTML = `${playbackRateSlider.value}x`;
             vidMap[vidUID].playbackRate = playbackRateSlider.value;
             playbackRateReset.disabled = playbackRateSlider.value == defaults.playbackRate.v;
@@ -278,6 +295,482 @@ async function main(defaults) {
         videoEl.appendChild(playbackRateDiv);
     }
 
+    function addShaderElements(vidUID, container, opacitySettingEL) {
+        const shaderId = `vf-shader-${vidMap[vidUID].localIndex}-${vidMap[vidUID].uri}`;
+        
+        const checkboxDiv = document.createElement("div");
+        checkboxDiv.style.paddingTop = "10px";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = `${shaderId}-checkbox`;
+        checkbox.style.gridColumn = "4";
+        const checkboxLabel = document.createElement("label");
+        checkboxLabel.htmlFor = `${shaderId}-checkbox`;
+        checkboxLabel.textContent = "Shaders";
+        checkboxLabel.style.gridColumn = "1 / span 2";
+        checkboxLabel.style.fontWeight = "500";
+        checkboxDiv.appendChild(checkboxLabel);
+        checkboxDiv.appendChild(checkbox);
+        container.appendChild(checkboxDiv);
+
+        const shaderFragment = defaults.shader.fragment;
+        const uniforms = parseShaderUniforms(shaderFragment);
+        for (const [name, props] of Object.entries(uniforms)) {
+            const controlDiv = document.createElement("div");
+            const label = document.createElement("label");
+            label.innerHTML = props.label + ":";
+            const valueEl = document.createElement("span");
+            valueEl.innerHTML = props.default.toFixed(1);
+            valueEl.style.alignSelf = "center";
+            const sliderEl = document.createElement("input");
+            sliderEl.id = `slider-${shaderId}-${name}`;
+            sliderEl.type = "range";
+            sliderEl.min = props.min;
+            sliderEl.max = props.max;
+            sliderEl.value = props.default;
+            sliderEl.step = 0.1;
+            sliderEl.disabled = true;
+
+            controlDiv.appendChild(label);
+            controlDiv.appendChild(sliderEl);
+            controlDiv.appendChild(valueEl);
+
+            const resetBtn = document.createElement("button");
+            resetBtn.setAttribute("id", "resetBtn");
+            resetBtn.disabled = true;
+            resetBtn.style.alignSelf = "center";
+            resetBtn.addEventListener("click", () => {
+                sliderEl.value = props.default;
+                valueEl.innerHTML = props.default.toFixed(1);
+                resetBtn.disabled = true;
+                
+                if (checkbox.checked) {
+                    chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                    chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id, allFrames: true },
+                        func: (shaderId, value, name) => {
+                            chrome.storage.local.get("frameUri", (data) => {
+                                if (window.location.href !== data.frameUri) return;
+                                const updateUniform = window[`update${name}_${shaderId}`];
+                                if (updateUniform) {
+                                    updateUniform(value);
+                                    window[`current${name}_${shaderId}`] = value;
+                                }
+                            });
+                        },
+                        args: [shaderId, props.default, name]
+                    });
+                }
+            });
+
+            sliderEl.addEventListener("input", () => {
+                const value = parseFloat(sliderEl.value);
+                valueEl.innerHTML = value.toFixed(1);
+                resetBtn.disabled = value === props.default;
+                
+                if (checkbox.checked) {
+                    chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                    chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id, allFrames: true },
+                        func: (shaderId, value, name) => {
+                            chrome.storage.local.get("frameUri", (data) => {
+                                if (window.location.href !== data.frameUri) return;
+                                const updateUniform = window[`update${name}_${shaderId}`];
+                                if (updateUniform) {
+                                    updateUniform(value);
+                                    window[`current${name}_${shaderId}`] = value;
+                                }
+                            });
+                        },
+                        args: [shaderId, value, name]
+                    });
+                }
+            });
+
+            controlDiv.appendChild(resetBtn);
+            container.appendChild(controlDiv);
+        }
+
+        // Check if shader is already active for this video
+        chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+        chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+        chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: async (shaderId, uniforms) => {
+                const data = await chrome.storage.local.get("frameUri");
+                if (window.location.href !== data.frameUri) return { ignore: true, isActive: false, dynamic: [] };
+                const canvas = document.getElementById(shaderId);
+                const dynamicUniforms = [];
+                for (const [name, props] of Object.entries(uniforms)) {
+                    dynamicUniforms.push({
+                        name: name,
+                        value: window[`current${name}_${shaderId}`] || props.default,
+                        defaultValue: props.default,
+                    });
+                }
+                if (canvas) {
+                    const currentUniforms = {
+                        ignore: false,
+                        isActive: true,
+                        dynamic: dynamicUniforms,
+                    };
+                    return currentUniforms;
+                }
+                return { ignore: false, isActive: false, dynamic: dynamicUniforms };
+            },
+            args: [shaderId, uniforms]
+        }).then((results) => {
+            results = results.filter(r => !r.result.ignore);
+            const { isActive, dynamic } = results[0].result;
+            if (isActive) {
+                checkbox.checked = true;
+                opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 0; el.dispatchEvent(new Event('input')); el.parentNode.querySelector("button").disabled = true; });
+                
+                for (const { name, value, defaultValue } of dynamic) {
+                    const slider = document.getElementById(`slider-${shaderId}-${name}`);
+                    if (slider) {
+                        slider.disabled = false;
+                        slider.value = value;
+                        const valueEl = slider.nextElementSibling;
+                        if (valueEl) {
+                            valueEl.innerHTML = value.toFixed(1);
+                        }
+                        const resetBtn = valueEl.nextElementSibling;
+                        if (resetBtn) {
+                            resetBtn.disabled = value === defaultValue;
+                        }
+                    }
+                }
+            }
+        });
+
+        checkbox.onchange = () => {
+            // Check if shaders are already injected
+            chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+            chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+            chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => {
+                    chrome.storage.local.get("frameUri", (data) => {
+                        if (window.location.href !== data.frameUri) return;
+                        return typeof VF_SHADERS !== 'undefined'
+                    });
+                }
+            }).then(() => {
+                return chrome.storage.sync.get(['defaults']);
+            }).then((data) => {
+                const shaderStrings = data.defaults.shader;
+                chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+                return chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: (shaderStrings) => {
+                        chrome.storage.local.get("frameUri", (data) => {
+                            if (window.location.href !== data.frameUri) return;
+                            window.VF_SHADERS = shaderStrings;
+                        });
+                    },
+                    args: [shaderStrings]
+                });
+            }).then(() => {
+                // Check if shader is already active
+                chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+                chrome.scripting.executeScript({
+                    target: { tabId: tab.id, allFrames: true },
+                    func: async (shaderId, uniforms) => {
+                        const data = await chrome.storage.local.get("frameUri");
+                        if (window.location.href !== data.frameUri) return { ignore: true, isActive: false, dynamic: [] };
+                        const canvas = document.getElementById(shaderId);
+                        const dynamicUniforms = [];
+                        for (const [name, props] of Object.entries(uniforms)) {
+                            dynamicUniforms.push({
+                                name: name,
+                                value: window[`current${name}_${shaderId}`] || props.default,
+                                defaultValue: props.default,
+                            });
+                        }
+                        if (canvas) {
+                            return {
+                                ignore: false,
+                                isActive: true,
+                                dynamic: dynamicUniforms,
+                            };
+                        }
+                        return { ignore: false, isActive: false, dynamic: dynamicUniforms };
+                    },
+                    args: [shaderId, uniforms]
+                }).then((results) => {
+                    results = results.filter(r => !r.result.ignore);
+                    const { isActive, dynamic } = results[0].result;
+                    if (isActive) {
+                        // Remove shader
+                        chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                        chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+                        chrome.scripting.executeScript({
+                            target: { tabId: tab.id, allFrames: true },
+                            func: (shaderId) => {
+                                chrome.storage.local.get("frameUri", (data) => {
+                                    if (window.location.href !== data.frameUri) return;
+                                    const canvas = document.getElementById(shaderId);
+                                    if (canvas) {
+                                        // Find the video by matching the canvas position with video position
+                                        const videos = VF_findVideos();
+                                        const video = videos.find(v => {
+                                        const vRect = v.getBoundingClientRect();
+                                        const cRect = canvas.getBoundingClientRect();
+                                        return Math.abs(vRect.left - cRect.left) < 1 && 
+                                               Math.abs(vRect.top - cRect.top) < 1;
+                                        });
+                                    
+                                        if (video) {
+                                            if (window[`renderCallback_${shaderId}`]) {
+                                                video.cancelVideoFrameCallback(window[`renderCallback_${shaderId}`]);
+                                                delete window[`renderCallback_${shaderId}`];
+                                            }
+                                            const originalOpacity = video.getAttribute('data-original-opacity');
+                                            if (originalOpacity !== null) {
+                                                video.style.opacity = originalOpacity;
+                                                video.removeAttribute('data-original-opacity');
+                                            } else {
+                                                video.style.opacity = '1';
+                                            }
+
+                                            const filterObserver = window[`filterObserver_${shaderId}`];
+                                            if (filterObserver) {
+                                                filterObserver.disconnect();
+                                                delete window[`filterObserver_${shaderId}`];
+                                            }
+                                        }
+                                        canvas.remove();
+                                    }
+                                });
+                            },
+                            args: [shaderId]
+                        });
+                        checkbox.checked = false;
+                        opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = false; el.value = 1; el.dispatchEvent(new Event('input'));});
+                        for (const { name, defaultValue } of dynamic) {
+                            const slider = document.getElementById(`slider-${shaderId}-${name}`);
+                            if (slider) {
+                                slider.disabled = true;
+                                slider.value = defaultValue;
+                                slider.parentNode.querySelector("button").disabled = true;
+                            }
+                        }
+                    } else {
+                        // Add shader
+                        chrome.storage.local.set({ videoIndex: vidMap[vidUID].localIndex });
+                        chrome.storage.local.set({ frameUri: vidMap[vidUID].uri });
+                        chrome.scripting.executeScript({
+                            target: { tabId: tab.id },
+                            func: (videoIndex, shaderId, uniforms) => {
+                                chrome.storage.local.get("frameUri", (data) => {
+                                    if (window.location.href !== data.frameUri) return;
+                                    const videos = VF_findVideos();
+                                    if (videoIndex >= videos.length) {
+                                        console.error('Video index out of range');
+                                        console.error(videoIndex, videos.length);
+                                        console.error(videos);
+                                        return;
+                                    }
+                                    const video = videos[videoIndex];
+
+                                    const canvas = document.createElement('canvas');
+                                    canvas.id = shaderId;
+                                    canvas.width = video.videoWidth;
+                                    canvas.height = video.videoHeight;
+
+                                    const videoStyle = getComputedStyle(video);
+
+                                    canvas.style.position = 'absolute';
+
+                                    canvas.style.filter = video.style.filter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
+
+                                    video.parentNode.insertBefore(canvas, video);
+
+                                    video.style.position = videoStyle.position === 'static' ? 'relative' : videoStyle.position;
+
+                                    const filterObserver = new MutationObserver((mutations) => {
+                                        mutations.forEach((mutation) => {
+                                            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                                                let newFilter = video.style.filter;
+                                                newFilter = newFilter.replace(/opacity\([0-9\.]*\)/i, 'opacity(1)');
+                                                canvas.style.filter = newFilter;
+                                            }
+                                        });
+                                    });
+
+                                    filterObserver.observe(video, {
+                                        attributes: true,
+                                        attributeFilter: ['style']
+                                    });
+
+                                    window[`filterObserver_${shaderId}`] = filterObserver;
+
+                                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                                    if (!gl) {
+                                        console.error('WebGL not supported');
+                                        return;
+                                    }
+
+                                    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                                    gl.shaderSource(vertexShader, VF_SHADERS.vertex);
+                                    gl.compileShader(vertexShader);
+
+                                    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                                    gl.shaderSource(fragmentShader, VF_SHADERS.fragment);
+                                    gl.compileShader(fragmentShader);
+
+                                    const program = gl.createProgram();
+                                    gl.attachShader(program, vertexShader);
+                                    gl.attachShader(program, fragmentShader);
+                                    gl.linkProgram(program);
+                                    gl.useProgram(program);
+
+                                    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+                                        console.error('Vertex shader compilation failed:', gl.getShaderInfoLog(vertexShader));
+                                        return;
+                                    }
+                                    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+                                        console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader));
+                                        return;
+                                    }
+                                    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                                        console.error('Shader program linking failed:', gl.getProgramInfoLog(program));
+                                        return;
+                                    }
+
+                                    const positionBuffer = gl.createBuffer();
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                                        -1.0, -1.0,
+                                        1.0, -1.0,
+                                        -1.0,  1.0,
+                                        -1.0,  1.0,
+                                        1.0, -1.0,
+                                        1.0,  1.0
+                                    ]), gl.STATIC_DRAW);
+
+                                    const texCoordBuffer = gl.createBuffer();
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                                        0.0, 1.0,
+                                        1.0, 1.0,
+                                        0.0, 0.0,
+                                        0.0, 0.0,
+                                        1.0, 1.0,
+                                        1.0, 0.0 
+                                    ]), gl.STATIC_DRAW);
+
+                                    const texture = gl.createTexture();
+                                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+                                    const positionLocation = gl.getAttribLocation(program, "a_position");
+                                    const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+                                    const textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
+                                    const textureLocation = gl.getUniformLocation(program, "u_texture");
+
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                                    gl.enableVertexAttribArray(positionLocation);
+                                    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+                                    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                                    gl.enableVertexAttribArray(texCoordLocation);
+                                    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+                                    const dynamicLocations = {};
+                                    for (const [name, props] of Object.entries(uniforms)) {
+                                        const location = gl.getUniformLocation(program, `${name}`);
+                                        if (location) {
+                                            dynamicLocations[name] = location;
+                                            gl.uniform1f(location, props.default);
+                                            window[`current${name}_${shaderId}`] = props.default;                                      
+                                        } else {
+                                            console.error(`Uniform ${name} not found. Something is wrong with the shader.`);
+                                        }
+                                    }                                
+
+                                    const updateCanvasPosition = () => {
+                                        const videoRect = video.getBoundingClientRect();
+                                        const videoStyle = getComputedStyle(video);
+                                        
+                                        canvas.style.zIndex = videoStyle.zIndex || 'auto';
+
+                                        canvas.style.width = videoRect.width + 'px';
+                                        canvas.style.height = videoRect.height + 'px';
+                                        canvas.style.left = videoStyle.left;
+                                        canvas.style.right = videoStyle.right;
+                                        canvas.style.top = videoStyle.top;
+                                        canvas.style.bottom = videoStyle.bottom;
+                                        canvas.style.transform = videoStyle.transform;
+                                    
+                                        canvas.width = video.videoWidth;
+                                        canvas.height = video.videoHeight;
+
+                                        gl.viewport(0, 0, canvas.width, canvas.height);
+                                    };
+                                    updateCanvasPosition();
+
+                                    const resizeObserver = new ResizeObserver(updateCanvasPosition);
+                                    resizeObserver.observe(video);
+                                    window.addEventListener('scroll', updateCanvasPosition, { passive: true });
+                                    video.addEventListener('fullscreenchange', updateCanvasPosition, { passive: true });
+
+                                    // TODO render every other frame option for performance
+                                    function render(forced) {
+                                        gl.bindTexture(gl.TEXTURE_2D, texture);
+                                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                                        gl.uniform2f(textureSizeLocation, video.videoWidth, video.videoHeight);
+                                        gl.uniform1i(textureLocation, 0);
+
+                                        for (const [name, props] of Object.entries(uniforms)) {
+                                            if (props.type === 'float') {
+                                                gl.uniform1f(dynamicLocations[name], window[`current${name}_${shaderId}`]);
+                                            }
+                                        }
+
+                                        gl.viewport(0, 0, canvas.width, canvas.height);
+                                        gl.clearColor(0, 0, 0, 0);
+                                        gl.clear(gl.COLOR_BUFFER_BIT);
+                                        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                                        if (!forced) window[`renderCallback_${shaderId}`] = video.requestVideoFrameCallback(()=>render(false));
+                                    }
+                                    render(false);
+
+                                    for (const [name, props] of Object.entries(uniforms)) {
+                                        if (props.type === 'float') {
+                                            window[`update${name}_${shaderId}`] = (value) => {
+                                                window[`current${name}_${shaderId}`] = value;
+                                                render(true);
+                                            };
+                                        }
+                                    }
+                                });
+                            },
+                            args: [vidMap[vidUID].localIndex, shaderId, uniforms]
+                        });
+                        checkbox.checked = true;
+                        opacitySettingEL.querySelectorAll("input").forEach(el => {el.disabled = true; el.value = 0; el.dispatchEvent(new Event('input')); el.parentNode.querySelector("button").disabled = true;});
+                        for (const { name } of dynamic) {
+                            const slider = document.getElementById(`slider-${shaderId}-${name}`);
+                            if (slider) {
+                                slider.disabled = false;
+                            }
+                        }
+                    }
+                });
+            });
+        };
+    }
+
     function setFilter(video) {
         const filter = video.pf;
         chrome.storage.local.set({ videoStyleFilter: pfToString(filter) });
@@ -289,12 +782,7 @@ async function main(defaults) {
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
                     chrome.storage.local.get("videoIndex", (videoIndex) => {
-                        let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
-                        for (const { shadowRoot } of document.querySelectorAll("*")) {
-                            if (shadowRoot) {
-                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
-                            }
-                        }
+                        const nodes = VF_findVideos();
                         const vid = nodes[videoIndex.videoIndex];
                         chrome.storage.local.get("videoStyleFilter", (videoStyleFilter) => {
                             vid.style.filter = videoStyleFilter.videoStyleFilter;
@@ -304,6 +792,7 @@ async function main(defaults) {
             },
         }, _ => !chrome.runtime.lastError || console.log("Error(setFilter): ", chrome.runtime.lastError));
     }
+
     function setPlaybackRate(video) {
         const playbackRate = video.playbackRate;
         chrome.storage.local.set({ videoPlaybackRate: playbackRate });
@@ -315,12 +804,7 @@ async function main(defaults) {
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
                     chrome.storage.local.get("videoIndex", (videoIndex) => {
-                        let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
-                        for (const { shadowRoot } of document.querySelectorAll("*")) {
-                            if (shadowRoot) {
-                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
-                            }
-                        }
+                        const nodes = VF_findVideos();
                         const vid = nodes[videoIndex.videoIndex];
                         chrome.storage.local.get("videoPlaybackRate", (videoPlaybackRate) => {
                             vid.playbackRate = videoPlaybackRate.videoPlaybackRate;
@@ -330,52 +814,17 @@ async function main(defaults) {
             },
         }, _ => !chrome.runtime.lastError || console.log("Error(setPlayBackRate): ", chrome.runtime.lastError));
     }
+
     function reqPIP(video) {
         chrome.storage.local.set({ videoIndex: video.localIndex });
         chrome.storage.local.set({ frameUri: video.uri });
         chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             function: () => {
-
-                function insertAt(parent, newElement, index) {
-                    if (index >= parent.children.length) {
-                        parent.appendChild(newElement);
-                    } else {
-                        parent.insertBefore(newElement, parent.children[index]);
-                    }
-                }
-
-                function getElementIndex(element) {
-                    return Array.prototype.slice.call(element.parentNode.children).indexOf(element);
-                }
-
-                function clearDocPIP() {
-                    document.VF_vidContRef.append(document.VF_vidRef);
-                    document.VF_vidRef.style.width = document.VF_vidWidth ? document.VF_vidWidth : "";
-                    document.VF_vidRef.style.height = document.VF_vidHeight ? document.VF_vidHeight : "";
-                    insertAt(document.VF_vidContRef, document.VF_vidRef, document.VF_vidIndex);
-                    if(document.VF_addedControls) {
-                        document.VF_vidRef.removeAttribute("controls");
-                    }
-                    document.pipWindow.close();
-                    document.VF_pipIndex = null;
-                    document.VF_vidRef = null;
-                    document.VF_vidContRef = null;
-                    document.VF_vidIndex = null;
-                    document.VF_vidWidth = null;
-                    document.VF_vidHeight = null;
-                    document.VF_standinEl.remove();
-                }
-
                 chrome.storage.local.get("frameUri", (data) => {
                     if (window.location.href !== data.frameUri) return;
                     chrome.storage.local.get("videoIndex", async (videoIndex) => {
-                        let nodes = Array.from(document.querySelectorAll("video, .VF_standin")) ?? [];
-                        for (const { shadowRoot } of document.querySelectorAll("*")) {
-                            if (shadowRoot) {
-                                nodes = nodes.concat(Array.from(shadowRoot.querySelectorAll("video, .VF_standin")) ?? []);
-                            }
-                        }
+                        const nodes = VF_findVideos();
                         const vid = nodes[videoIndex.videoIndex];
                         chrome.storage.sync.get("advancedPIPEnabled", async enabled => {
                             if (enabled.advancedPIPEnabled) {
@@ -383,7 +832,7 @@ async function main(defaults) {
                                     document.VF_pipIndex = videoIndex.videoIndex;
                                     document.VF_vidRef = vid;
                                     document.VF_vidContRef = vid.parentElement;
-                                    document.VF_vidIndex = getElementIndex(vid);
+                                    document.VF_vidIndex = VF_getElementIndex(vid);
                                     document.VF_vidWidth = vid.style?.width ?? 0;
                                     document.VF_vidHeight = vid.style?.height ?? 0;
 
@@ -413,14 +862,14 @@ async function main(defaults) {
                                         height: vid.clientHeight,
                                     });
                                     document.pipWindow.document.body.style = "margin: 0; background-color: black;"
-                                    document.pipWindow.addEventListener("pagehide", clearDocPIP);
+                                    document.pipWindow.addEventListener("pagehide", VF_clearDocPIP);
 
                                     document.pipWindow.document.body.append(vid);
                                     document.pipWindow.document.body.addEventListener("click", () => {
                                         vid.paused ? vid.play() : vid.pause();
                                     });
 
-                                    insertAt(document.VF_vidContRef, document.VF_standinEl, document.VF_vidIndex); // set VF_standin at original video position.
+                                    VF_insertAt(document.VF_vidContRef, document.VF_standinEl, document.VF_vidIndex); // set VF_standin at original video position.
                                     vid.style.width = "100vw"; // "fill window"
                                     vid.style.height = "100vh";
                                     if(!vid.controls) {
@@ -429,7 +878,7 @@ async function main(defaults) {
                                     }
 
                                 } else {
-                                    clearDocPIP();
+                                    VF_clearDocPIP();
                                 }
                             } else { // simple 
                                 if (document.VF_pipIndex !== videoIndex.videoIndex || !document.pictureInPictureElement) {
@@ -450,7 +899,6 @@ async function main(defaults) {
     }
 
     function parseFilter(fltr) {
-        // TODO replace regex with a proper parser?
         //  feature = (regex between the parentheses || [0, default]) [capture group]
         let blur = (fltr.match(/blur\((.*?)\)/m) || [0, "0"])[1];
         let brightness = (fltr.match(/brightness\((.*?)\)/m) || [0, "1"])[1];
@@ -507,7 +955,6 @@ chrome.storage.sync.get("advancedPIPEnabled", enabled => {
     const toggle = document.getElementById("advancedPIP");
     if (enabled.advancedPIPEnabled) toggle.checked = true;
     toggle.addEventListener("change", () => {
-        console.log(toggle.checked);
         chrome.storage.sync.set({ "advancedPIPEnabled": toggle.checked });
     });
 });

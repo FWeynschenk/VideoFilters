@@ -2,14 +2,43 @@
 <html>
 
 <head>
+  <meta charset="UTF-8">
+  <title>Video Filters Options</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 
-<body>
+<body class="options-page">
   <h1>Video Filters</h1>
   <h2>Edit Maximum Values</h2>
   <div id="defaultsList">
     <b>Saves automatically</b>
+  </div>
+
+  <h2>Shader Editor</h2>
+  <div id="shaderEditor">
+    <div id="shaderControls">
+      <div class="shader-buttons">
+        <button id="resetShader">Reset to Default</button>
+        <button id="validateShader">Validate</button>
+        <button id="saveShader">Save</button>
+      </div>
+      <div class="shader-format-info">
+        Required format:
+        <ul>
+          <li><code>precision: <select id="precisionSelect">
+            <option value="lowp">lowp</option>
+            <option value="mediump">mediump</option>
+            <option value="highp">highp</option>
+          </select> float;</code></li>
+          <li><code>uniform sampler2D u_texture;</code></li>
+          <li><code>uniform vec2 u_textureSize;</code></li>
+          <li><code>varying vec2 v_texCoord;</code></li>
+          <li>Custom uniforms for user interaction must look like <code>uniform float u_uniformName; // [min: #, max: #, default: #, label: String]</code></li>
+        </ul>
+      </div>
+    </div>
+    <div id="shaderInputs"></div>
+    <textarea id="shaderCode" rows="20" cols="80" spellcheck="false"></textarea>
   </div>
 
   <footer>
@@ -39,6 +68,8 @@
   </footer>
 
 </body>
+<script src="defaultShader.js"></script>
+<script src="shaderParser.js"></script>
 <script src="options.js"></script>
 
 </html>
