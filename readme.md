@@ -14,6 +14,8 @@ Chrome extension for
 
 
 ## Changelog
+### 1.4.1
+* better labeling
 ### 1.4.0
 * Shaders!
 ### 1.3.1

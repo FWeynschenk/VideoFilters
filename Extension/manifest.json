@@ -1,7 +1,7 @@
 {
   "name": "Video Filters",
   "description": "Easy access to html5 video filters and shaders",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"
